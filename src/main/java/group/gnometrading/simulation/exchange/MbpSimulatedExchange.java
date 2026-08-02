@@ -132,6 +132,11 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
     }
 
     @Override
+    public long simulateOrderProcessingTime(boolean isMaker) {
+        return orderProcessingLatency.simulate(isMaker);
+    }
+
+    @Override
     public List<SchemaType> getSupportedSchemas() {
         return List.of(SchemaType.MBP_10, SchemaType.MBP_1);
     }
@@ -178,8 +183,6 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
 
     private OrderExecutionReport mapFillToReport(LocalOrder localOrder, long filledQty, long remainingAfterFill) {
         long price = localOrder.order.decoder.price();
-        // Use double to avoid overflow: price (~9e13) * size (~1e6) = ~9e19 exceeds Long.MAX_VALUE
-        double notional = (double) filledQty * price;
         long cumulativeQty = localOrder.order.decoder.size() - remainingAfterFill;
 
         ExecType execType = remainingAfterFill == 0 ? ExecType.FILL : ExecType.PARTIAL_FILL;
@@ -194,7 +197,7 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
                 price,
                 cumulativeQty,
                 remainingAfterFill,
-                toScaledFee(feeModel.calculateFee(notional, true)));
+                toScaledFee(feeModel.calculateFee(price, filledQty, true)));
         report.encoder
                 .exchangeId((short) localOrder.order.decoder.exchangeId())
                 .securityId(localOrder.order.decoder.securityId());
@@ -209,9 +212,11 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
 
         long totalFilled = 0;
         double totalNotional = 0;
+        double totalFee = 0;
         for (OrderMatch match : matches) {
             totalFilled += match.size();
             totalNotional += (double) match.price() * match.size();
+            totalFee += feeModel.calculateFee(match.price(), match.size(), false);
         }
 
         long vwapPrice = totalFilled > 0 ? (long) (totalNotional / totalFilled) : 0;
@@ -230,7 +235,7 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
                 vwapPrice,
                 totalFilled,
                 remaining,
-                toScaledFee(feeModel.calculateFee(totalNotional, false)));
+                toScaledFee(totalFee));
         report.encoder.exchangeId((short) order.decoder.exchangeId()).securityId(order.decoder.securityId());
         return List.of(report);
     }
@@ -248,13 +253,15 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
         if (!matches.isEmpty()) {
             long totalFilled = 0;
             double totalNotional = 0;
+            double totalFee = 0;
             for (OrderMatch match : matches) {
                 totalFilled += match.size();
                 totalNotional += (double) match.price() * match.size();
+                totalFee += feeModel.calculateFee(match.price(), match.size(), false);
             }
 
             // Aggressive limit orders that immediately cross the spread are taking liquidity.
-            long feeScaled = toScaledFee(feeModel.calculateFee(totalNotional, false));
+            long feeScaled = toScaledFee(totalFee);
             long vwapPrice = (long) (totalNotional / totalFilled);
             long remaining = orderSize - totalFilled;
 

@@ -22,5 +22,9 @@ public interface SimulatedExchange {
 
     long simulateOrderProcessingTime();
 
+    default long simulateOrderProcessingTime(boolean isMaker) {
+        return simulateOrderProcessingTime();
+    }
+
     List<SchemaType> getSupportedSchemas();
 }

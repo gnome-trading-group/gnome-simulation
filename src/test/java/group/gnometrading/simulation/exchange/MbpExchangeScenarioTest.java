@@ -143,7 +143,7 @@ class MbpExchangeScenarioTest {
 
     static class ZeroFeeModel implements FeeModel {
         @Override
-        public double calculateFee(double totalPrice, boolean isMaker) {
+        public double calculateFee(long price, long quantity, boolean isMaker) {
             return 0;
         }
     }

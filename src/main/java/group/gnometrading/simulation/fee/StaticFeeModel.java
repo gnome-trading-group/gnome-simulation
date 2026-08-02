@@ -11,7 +11,8 @@ public final class StaticFeeModel implements FeeModel {
     }
 
     @Override
-    public double calculateFee(double notional, boolean isMaker) {
+    public double calculateFee(long price, long quantity, boolean isMaker) {
+        double notional = (double) price * quantity;
         return isMaker ? notional * makerFee : notional * takerFee;
     }
 }
