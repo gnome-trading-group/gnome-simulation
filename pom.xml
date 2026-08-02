@@ -9,12 +9,12 @@
     </parent>
 
     <artifactId>gnome-simulation</artifactId>
-    <version>1.2.0</version>
+    <version>1.2.1-SNAPSHOT</version>
 
     <scm>
         <connection>scm:git:git@github.com:gnome-trading-group/gnome-simulation.git</connection>
         <developerConnection>scm:git:git@github.com:gnome-trading-group/gnome-simulation.git</developerConnection>
-        <tag>gnome-simulation-1.2.0</tag>
+        <tag>HEAD</tag>
     </scm>
 
     <distributionManagement>
