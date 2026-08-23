@@ -226,6 +226,7 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
         OrderStatus status = totalFilled == orderSize ? OrderStatus.FILLED : OrderStatus.PARTIALLY_FILLED;
         long remaining = orderSize - totalFilled;
 
+        long feeScaled = toScaledFee(totalFee);
         OrderExecutionReport report = makeReport(
                 order.getClientOidCounter(),
                 order.getClientOidStrategyId(),
@@ -235,8 +236,22 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
                 vwapPrice,
                 totalFilled,
                 remaining,
-                toScaledFee(totalFee));
+                feeScaled);
         report.encoder.exchangeId((short) order.decoder.exchangeId()).securityId(order.decoder.securityId());
+        if (remaining > 0) {
+            OrderExecutionReport cancel = makeReport(
+                    order.getClientOidCounter(),
+                    order.getClientOidStrategyId(),
+                    ExecType.CANCEL,
+                    OrderStatus.PARTIALLY_FILLED,
+                    0,
+                    0,
+                    totalFilled,
+                    0,
+                    0);
+            cancel.encoder.exchangeId((short) order.decoder.exchangeId()).securityId(order.decoder.securityId());
+            return List.of(report, cancel);
+        }
         return List.of(report);
     }
 

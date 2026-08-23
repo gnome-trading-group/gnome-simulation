@@ -453,13 +453,17 @@ class MBPSubmitTest {
         Order order = makeOrder(0, 25, Side.Bid, 1L, OrderType.MARKET, TimeInForce.GOOD_TILL_CANCELED);
         List<OrderExecutionReport> reports = exchange.submitOrder(order);
 
-        assertEquals(1, reports.size());
+        assertEquals(2, reports.size());
         OrderExecutionReport r = reports.get(0);
         assertEquals(ExecType.PARTIAL_FILL, r.decoder.execType());
         assertEquals(OrderStatus.PARTIALLY_FILLED, r.decoder.orderStatus());
         assertEquals(10, r.decoder.filledQty());
         assertEquals(15, r.decoder.leavesQty());
         assertEquals(101, r.decoder.fillPrice());
+        OrderExecutionReport cancel = reports.get(1);
+        assertEquals(ExecType.CANCEL, cancel.decoder.execType());
+        assertEquals(OrderStatus.PARTIALLY_FILLED, cancel.decoder.orderStatus());
+        assertEquals(0, cancel.decoder.leavesQty());
     }
 
     @Test
