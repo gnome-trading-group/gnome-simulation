@@ -6,6 +6,7 @@ import group.gnometrading.simulation.queues.OptimisticQueueModel;
 import group.gnometrading.simulation.queues.ProbabilisticQueueModel;
 import group.gnometrading.simulation.queues.QueueModel;
 import group.gnometrading.simulation.queues.RiskAverseQueueModel;
+import java.util.Map;
 
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type", defaultImpl = QueueModelConfig.RiskAverse.class)
 @JsonSubTypes({
@@ -16,6 +17,19 @@ import group.gnometrading.simulation.queues.RiskAverseQueueModel;
 public abstract class QueueModelConfig {
 
     public abstract QueueModel toModel();
+
+    public static QueueModelConfig fromMap(Map<String, String> map) {
+        String model = map.getOrDefault("model", "risk_averse");
+        if ("optimistic".equals(model)) {
+            return new Optimistic();
+        }
+        if ("probabilistic".equals(model)) {
+            Probabilistic cfg = new Probabilistic();
+            cfg.cancelAheadProbability = Double.parseDouble(map.getOrDefault("cancel.ahead.probability", "0.5"));
+            return cfg;
+        }
+        return new RiskAverse();
+    }
 
     public static final class Optimistic extends QueueModelConfig {
         @Override

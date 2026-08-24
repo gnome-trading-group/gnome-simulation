@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import group.gnometrading.simulation.fee.FeeModel;
 import group.gnometrading.simulation.fee.ParametricFeeModel;
 import group.gnometrading.simulation.fee.StaticFeeModel;
+import java.util.Map;
 
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type", defaultImpl = FeeModelConfig.Static.class)
 @JsonSubTypes({
@@ -14,6 +15,20 @@ import group.gnometrading.simulation.fee.StaticFeeModel;
 public abstract class FeeModelConfig {
 
     public abstract FeeModel toModel();
+
+    public static FeeModelConfig fromMap(Map<String, String> map) {
+        String model = map.getOrDefault("model", "static");
+        if ("parametric".equals(model)) {
+            Parametric cfg = new Parametric();
+            cfg.takerFeeRate = Double.parseDouble(map.getOrDefault("taker.rate", "0.07"));
+            cfg.makerFeeRate = Double.parseDouble(map.getOrDefault("maker.rate", "0.0"));
+            return cfg;
+        }
+        Static cfg = new Static();
+        cfg.takerFee = Double.parseDouble(map.getOrDefault("taker", "0.0"));
+        cfg.makerFee = Double.parseDouble(map.getOrDefault("maker", "0.0"));
+        return cfg;
+    }
 
     public static final class Static extends FeeModelConfig {
         public double takerFee;

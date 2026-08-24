@@ -6,6 +6,7 @@ import group.gnometrading.simulation.latency.GaussianLatency;
 import group.gnometrading.simulation.latency.LatencyModel;
 import group.gnometrading.simulation.latency.MakerTakerLatencyModel;
 import group.gnometrading.simulation.latency.StaticLatency;
+import java.util.Map;
 
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type", defaultImpl = LatencyConfig.Static.class)
 @JsonSubTypes({
@@ -16,6 +17,26 @@ import group.gnometrading.simulation.latency.StaticLatency;
 public abstract class LatencyConfig {
 
     public abstract LatencyModel toModel();
+
+    public static LatencyConfig fromMap(Map<String, String> map) {
+        String model = map.getOrDefault("model", "static");
+        if ("gaussian".equals(model)) {
+            Gaussian cfg = new Gaussian();
+            cfg.mu = Double.parseDouble(map.getOrDefault("mu", "0.0"));
+            cfg.sigma = Double.parseDouble(map.getOrDefault("sigma", "0.0"));
+            return cfg;
+        }
+        if ("maker_taker".equals(model)) {
+            MakerTaker cfg = new MakerTaker();
+            cfg.baseNanos = Long.parseLong(map.getOrDefault("base.nanos", "0"));
+            cfg.takerDelayNanos = Long.parseLong(map.getOrDefault("taker.delay.nanos", "0"));
+            cfg.makerDelayNanos = Long.parseLong(map.getOrDefault("maker.delay.nanos", "0"));
+            return cfg;
+        }
+        Static cfg = new Static();
+        cfg.latencyNanos = Long.parseLong(map.getOrDefault("nanos", "0"));
+        return cfg;
+    }
 
     public static final class Static extends LatencyConfig {
         public long latencyNanos;
