@@ -18,8 +18,21 @@ public final class ExchangeProfileConfig {
                 feeModel.toModel(), networkLatency.toModel(), orderProcessingLatency.toModel(), queueModel.toModel());
     }
 
-    public static ExchangeProfileConfig fromProperties(Properties properties) {
-        return fromMap(properties.getPropertiesByPrefix("simulation."));
+    public static ExchangeProfileConfig resolveForListing(Properties properties, int listingId) {
+        Map<String, String> simMap = properties.getPropertiesByPrefix("simulation.");
+
+        String profileKey = "listing." + listingId + ".profile";
+        String profileName = simMap.get(profileKey);
+        if (profileName == null) {
+            throw new IllegalArgumentException("No simulation profile assigned to listing " + listingId);
+        }
+
+        Map<String, String> profileMap = subMap(simMap, "profiles." + profileName + ".");
+        if (profileMap.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Listing " + listingId + " references profile '" + profileName + "' but it is not defined");
+        }
+        return fromMap(profileMap);
     }
 
     public static ExchangeProfileConfig fromMap(Map<String, String> map) {
