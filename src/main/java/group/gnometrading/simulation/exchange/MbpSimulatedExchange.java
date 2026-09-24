@@ -11,6 +11,7 @@ import group.gnometrading.schemas.Order;
 import group.gnometrading.schemas.OrderExecutionReport;
 import group.gnometrading.schemas.OrderStatus;
 import group.gnometrading.schemas.OrderType;
+import group.gnometrading.schemas.RejectReason;
 import group.gnometrading.schemas.Schema;
 import group.gnometrading.schemas.SchemaType;
 import group.gnometrading.schemas.Side;
@@ -82,6 +83,9 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
         }
 
         if (order.decoder.orderType() == OrderType.MARKET) {
+            if (order.decoder.flags().postOnly()) {
+                return List.of(rejectedPostOnly(order));
+            }
             return handleMarketOrder(order);
         } else if (order.decoder.orderType() == OrderType.LIMIT) {
             return handleLimitOrder(order);
@@ -257,6 +261,11 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
 
     private List<OrderExecutionReport> handleLimitOrder(Order order) {
         List<OrderMatch> matches = orderBook.getMatchingOrders(order);
+
+        if (order.decoder.flags().postOnly() && !matches.isEmpty()) {
+            return List.of(rejectedPostOnly(order));
+        }
+
         List<OrderExecutionReport> reports = new ArrayList<>();
 
         long orderSize = order.decoder.size();
@@ -388,6 +397,24 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
                 0,
                 0);
         report.encoder.exchangeId((short) order.decoder.exchangeId()).securityId(order.decoder.securityId());
+        return report;
+    }
+
+    private OrderExecutionReport rejectedPostOnly(Order order) {
+        OrderExecutionReport report = makeReport(
+                order.getClientOidCounter(),
+                order.getClientOidStrategyId(),
+                ExecType.REJECT,
+                OrderStatus.REJECTED,
+                0,
+                0,
+                0,
+                0,
+                0);
+        report.encoder
+                .exchangeId((short) order.decoder.exchangeId())
+                .securityId(order.decoder.securityId())
+                .rejectReason(RejectReason.POST_ONLY_WOULD_CROSS);
         return report;
     }
 

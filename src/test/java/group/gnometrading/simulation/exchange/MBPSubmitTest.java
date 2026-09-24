@@ -11,6 +11,7 @@ import group.gnometrading.schemas.Order;
 import group.gnometrading.schemas.OrderExecutionReport;
 import group.gnometrading.schemas.OrderStatus;
 import group.gnometrading.schemas.OrderType;
+import group.gnometrading.schemas.RejectReason;
 import group.gnometrading.schemas.Side;
 import group.gnometrading.schemas.Statics;
 import group.gnometrading.schemas.TimeInForce;
@@ -240,6 +241,20 @@ class MBPSubmitTest {
 
     static Order makeLimitOrder(long price, long size, Side side, long clientOid) {
         return makeOrder(price, size, side, clientOid, OrderType.LIMIT, TimeInForce.GOOD_TILL_CANCELED);
+    }
+
+    static Order makePostOnlyLimitOrder(long price, long size, Side side, long clientOid) {
+        Order order = makeOrder(price, size, side, clientOid, OrderType.LIMIT, TimeInForce.GOOD_TILL_CANCELED);
+        order.encoder.flags().clear();
+        order.encoder.flags().postOnly(true);
+        return order;
+    }
+
+    static Order makePostOnlyMarketOrder(long size, Side side, long clientOid) {
+        Order order = makeOrder(0, size, side, clientOid, OrderType.MARKET, TimeInForce.GOOD_TILL_CANCELED);
+        order.encoder.flags().clear();
+        order.encoder.flags().postOnly(true);
+        return order;
     }
 
     static Order makeMarketOrder(long size, Side side, long clientOid) {
@@ -615,5 +630,59 @@ class MBPSubmitTest {
         assertEquals(102 * 10 * 0.03, decodeFee(r), 0.01);
         assertEquals(1, r.decoder.exchangeId());
         assertEquals(1, r.decoder.securityId());
+    }
+
+    // --- POST_ONLY ---
+
+    @Test
+    void testPostOnlyLimitOrderNoMatchRests() {
+        // No resting asks — post-only bid rests on the book
+        Order order = makePostOnlyLimitOrder(50 * P, 10 * S, Side.Bid, 1L);
+        List<OrderExecutionReport> reports = exchange.submitOrder(order);
+
+        assertEquals(1, reports.size());
+        assertEquals(ExecType.NEW, reports.get(0).decoder.execType());
+        assertEquals(OrderStatus.NEW, reports.get(0).decoder.orderStatus());
+    }
+
+    @Test
+    void testPostOnlyLimitOrderCrossingRejected() {
+        // Resting ask at 101; post-only buy at 101 would cross → rejected
+        exchange.onMarketData(makeSingleLevelUpdate(PRICE_NULL, SIZE_NULL, 101 * P, 10 * S));
+
+        Order order = makePostOnlyLimitOrder(101 * P, 5 * S, Side.Bid, 1L);
+        List<OrderExecutionReport> reports = exchange.submitOrder(order);
+
+        assertEquals(1, reports.size());
+        OrderExecutionReport r = reports.get(0);
+        assertEquals(ExecType.REJECT, r.decoder.execType());
+        assertEquals(OrderStatus.REJECTED, r.decoder.orderStatus());
+        assertEquals(RejectReason.POST_ONLY_WOULD_CROSS, r.decoder.rejectReason());
+    }
+
+    @Test
+    void testPostOnlyMarketOrderRejected() {
+        exchange.onMarketData(makeSingleLevelUpdate(PRICE_NULL, SIZE_NULL, 101 * P, 10 * S));
+
+        Order order = makePostOnlyMarketOrder(5 * S, Side.Bid, 1L);
+        List<OrderExecutionReport> reports = exchange.submitOrder(order);
+
+        assertEquals(1, reports.size());
+        OrderExecutionReport r = reports.get(0);
+        assertEquals(ExecType.REJECT, r.decoder.execType());
+        assertEquals(RejectReason.POST_ONLY_WOULD_CROSS, r.decoder.rejectReason());
+    }
+
+    @Test
+    void testNormalLimitOrderStillCrossesAndFills() {
+        exchange.onMarketData(makeSingleLevelUpdate(PRICE_NULL, SIZE_NULL, 101 * P, 10 * S));
+
+        // Normal (no POST_ONLY flag) limit order at 101 must still fill
+        Order order = makeLimitOrder(101 * P, 10 * S, Side.Bid, 1L);
+        List<OrderExecutionReport> reports = exchange.submitOrder(order);
+
+        assertEquals(1, reports.size());
+        assertEquals(ExecType.FILL, reports.get(0).decoder.execType());
+        assertEquals(OrderStatus.FILLED, reports.get(0).decoder.orderStatus());
     }
 }
