@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import group.gnometrading.schemas.Action;
 import group.gnometrading.schemas.CancelOrder;
 import group.gnometrading.schemas.ExecType;
+import group.gnometrading.schemas.Liquidity;
 import group.gnometrading.schemas.Mbp10Schema;
 import group.gnometrading.schemas.ModifyOrder;
 import group.gnometrading.schemas.Order;
@@ -407,6 +408,8 @@ class MBPSubmitTest {
         assertEquals(15 * S, partialFill.decoder.leavesQty());
         assertEquals(101 * P, partialFill.decoder.fillPrice());
         assertEquals(101 * 10 * 0.05, decodeFee(partialFill), 0.01); // taker fee
+        assertEquals(Liquidity.NULL_VAL, newReport.decoder.liquidity());
+        assertEquals(Liquidity.TAKER, partialFill.decoder.liquidity());
     }
 
     @Test
@@ -525,6 +528,36 @@ class MBPSubmitTest {
     }
 
     @Test
+    void testModifyAfterPartialFill_AckAndLaterFillsFollowFixQuantities() {
+        // Resting ask 102 x 10 behind 5 of displayed depth; a 8-lot trade fills 3 of ours
+        exchange.onMarketData(makeSingleLevelUpdate(100 * P, 50 * S, 102 * P, 5 * S));
+        exchange.submitOrder(makeOrder(102 * P, 10 * S, Side.Ask, 1L, OrderType.LIMIT, TimeInForce.GOOD_TILL_CANCELED));
+        List<OrderExecutionReport> partial = exchange.onMarketData(makeTrade(Side.Bid, 102 * P, 8 * S));
+        assertEquals(3 * S, partial.get(0).decoder.cumulativeQty());
+
+        // Re-price keeping order qty 10: FIX leaves 7 working, with the 3 filled still counted
+        List<OrderExecutionReport> ack = exchange.modifyOrder(makeModify(1, 1, 1L, 103 * P, 10 * S));
+        assertEquals(ExecType.NEW, ack.get(0).decoder.execType());
+        assertEquals(3 * S, ack.get(0).decoder.cumulativeQty());
+        assertEquals(7 * S, ack.get(0).decoder.leavesQty());
+
+        // The rest fills; cumulative qty continues from 3 rather than restarting at 0
+        List<OrderExecutionReport> fill = exchange.onMarketData(makeTrade(Side.Bid, 103 * P, 7 * S));
+        assertEquals(ExecType.FILL, fill.get(0).decoder.execType());
+        assertEquals(10 * S, fill.get(0).decoder.cumulativeQty());
+    }
+
+    @Test
+    void testModifyToAtOrBelowFilled_IsCancelRejected() {
+        exchange.onMarketData(makeSingleLevelUpdate(100 * P, 50 * S, 102 * P, 5 * S));
+        exchange.submitOrder(makeOrder(102 * P, 10 * S, Side.Ask, 1L, OrderType.LIMIT, TimeInForce.GOOD_TILL_CANCELED));
+        exchange.onMarketData(makeTrade(Side.Bid, 102 * P, 8 * S)); // 3 filled
+
+        List<OrderExecutionReport> reports = exchange.modifyOrder(makeModify(1, 1, 1L, 102 * P, 3 * S));
+        assertEquals(ExecType.CANCEL_REJECT, reports.get(0).decoder.execType());
+    }
+
+    @Test
     void testModifyOrderNonExistentRejected() {
         ModifyOrder modify = makeModify(1, 1, 99L, 100, 10);
         List<OrderExecutionReport> reports = exchange.modifyOrder(modify);
@@ -604,6 +637,7 @@ class MBPSubmitTest {
         assertEquals(1, reports.size());
         assertEquals(ExecType.FILL, reports.get(0).decoder.execType());
         assertEquals(101 * 20 * 0.05, decodeFee(reports.get(0)), 0.01);
+        assertEquals(Liquidity.TAKER, reports.get(0).decoder.liquidity());
     }
 
     @Test
@@ -628,6 +662,7 @@ class MBPSubmitTest {
         assertEquals(10 * S, r.decoder.cumulativeQty());
         assertEquals(0, r.decoder.leavesQty());
         assertEquals(102 * 10 * 0.03, decodeFee(r), 0.01);
+        assertEquals(Liquidity.MAKER, r.decoder.liquidity());
         assertEquals(1, r.decoder.exchangeId());
         assertEquals(1, r.decoder.securityId());
     }

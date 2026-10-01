@@ -3,6 +3,7 @@ package group.gnometrading.simulation.exchange;
 import group.gnometrading.schemas.Action;
 import group.gnometrading.schemas.CancelOrder;
 import group.gnometrading.schemas.ExecType;
+import group.gnometrading.schemas.Liquidity;
 import group.gnometrading.schemas.Mbp10Decoder;
 import group.gnometrading.schemas.Mbp10Schema;
 import group.gnometrading.schemas.Mbp1Schema;
@@ -106,8 +107,9 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
     public List<OrderExecutionReport> modifyOrder(ModifyOrder modify) {
         long clientOid = modify.getClientOidCounter();
         long newPrice = modify.decoder.price();
-        long newSize = modify.decoder.size();
-        if (orderBook.modifyLocalOrder(clientOid, newPrice, newSize)) {
+        long newOrderQty = modify.decoder.size();
+        if (orderBook.modifyLocalOrder(clientOid, newPrice, newOrderQty)) {
+            LocalOrder replaced = orderBook.findLocalOrder(clientOid);
             OrderExecutionReport report = makeReport(
                     modify.getClientOidCounter(),
                     modify.getClientOidStrategyId(),
@@ -115,8 +117,8 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
                     OrderStatus.NEW,
                     0,
                     0,
-                    0,
-                    newSize,
+                    newOrderQty - replaced.remaining,
+                    replaced.remaining,
                     0);
             report.encoder.exchangeId((short) modify.decoder.exchangeId()).securityId(modify.decoder.securityId());
             return List.of(report);
@@ -204,7 +206,8 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
                 toScaledFee(feeModel.calculateFee(price, filledQty, true)));
         report.encoder
                 .exchangeId((short) localOrder.order.decoder.exchangeId())
-                .securityId(localOrder.order.decoder.securityId());
+                .securityId(localOrder.order.decoder.securityId())
+                .liquidity(Liquidity.MAKER);
         return report;
     }
 
@@ -241,7 +244,10 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
                 totalFilled,
                 remaining,
                 feeScaled);
-        report.encoder.exchangeId((short) order.decoder.exchangeId()).securityId(order.decoder.securityId());
+        report.encoder
+                .exchangeId((short) order.decoder.exchangeId())
+                .securityId(order.decoder.securityId())
+                .liquidity(Liquidity.TAKER);
         if (remaining > 0) {
             OrderExecutionReport cancel = makeReport(
                     order.getClientOidCounter(),
@@ -300,7 +306,10 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
                         totalFilled,
                         0,
                         feeScaled);
-                report.encoder.exchangeId((short) exchangeId).securityId(securityId);
+                report.encoder
+                        .exchangeId((short) exchangeId)
+                        .securityId(securityId)
+                        .liquidity(Liquidity.TAKER);
                 return List.of(report);
             }
 
@@ -314,7 +323,11 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
                     totalFilled,
                     remaining,
                     feeScaled);
-            partialFill.encoder.exchangeId((short) exchangeId).securityId(securityId);
+            partialFill
+                    .encoder
+                    .exchangeId((short) exchangeId)
+                    .securityId(securityId)
+                    .liquidity(Liquidity.TAKER);
 
             if (order.decoder.timeInForce() == TimeInForce.FILL_OR_KILL) {
                 return List.of(rejected(order));

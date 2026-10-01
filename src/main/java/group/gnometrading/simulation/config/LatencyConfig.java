@@ -24,6 +24,7 @@ public abstract class LatencyConfig {
             Gaussian cfg = new Gaussian();
             cfg.mu = Double.parseDouble(map.getOrDefault("mu", "0.0"));
             cfg.sigma = Double.parseDouble(map.getOrDefault("sigma", "0.0"));
+            cfg.seed = Long.parseLong(map.getOrDefault("seed", Long.toString(GaussianLatency.DEFAULT_SEED)));
             return cfg;
         }
         if ("maker_taker".equals(model)) {
@@ -50,10 +51,11 @@ public abstract class LatencyConfig {
     public static final class Gaussian extends LatencyConfig {
         public double mu;
         public double sigma;
+        public long seed = GaussianLatency.DEFAULT_SEED;
 
         @Override
         public LatencyModel toModel() {
-            return new GaussianLatency(mu, sigma);
+            return new GaussianLatency(mu, sigma, seed);
         }
     }
 

@@ -252,21 +252,33 @@ public final class MbpBook {
      * level and loses queue position. If only size changes, it stays in place.
      * Returns true if the order was found and modified.
      */
-    public boolean modifyLocalOrder(long clientOid, long newPrice, long newSize) {
-        // Find in bid or ask maps
+    /** The live local order for {@code clientOid}, on either side, or null if there is none. */
+    public LocalOrder findLocalOrder(long clientOid) {
         LocalOrder localOrder = localBidOrders.get(clientOid);
-        Side side = Side.Bid;
-        if (localOrder == null) {
-            localOrder = localAskOrders.get(clientOid);
-            side = Side.Ask;
-        }
+        return localOrder != null ? localOrder : localAskOrders.get(clientOid);
+    }
+
+    /**
+     * Replaces a local order's price and FIX order quantity, the order's total size including what has
+     * already filled. What stays working is the new order quantity less the fills, so a replace at or
+     * below the filled quantity is rejected, as FIX requires.
+     *
+     * @return false if there is no such order or the replace is rejected
+     */
+    public boolean modifyLocalOrder(long clientOid, long newPrice, long newOrderQty) {
+        LocalOrder localOrder = findLocalOrder(clientOid);
         if (localOrder == null) {
             return false;
         }
+        Side side = localBidOrders.containsKey(clientOid) ? Side.Bid : Side.Ask;
 
         TreeMap<Long, OrderBookLevel> book = side == Side.Bid ? bids : asks;
         long oldPrice = localOrder.order.decoder.price();
-        long oldSize = localOrder.order.decoder.size();
+        long filledQty = localOrder.order.decoder.size() - localOrder.remaining;
+        long newRemaining = newOrderQty - filledQty;
+        if (newRemaining <= 0) {
+            return false;
+        }
 
         if (oldPrice != newPrice) {
             // Price changed — remove from old level, add to new level (loses queue position)
@@ -279,8 +291,8 @@ public final class MbpBook {
             }
 
             // Update order fields by re-encoding into the existing SBE buffer
-            localOrder.order.encoder.price(newPrice).size(newSize);
-            localOrder.remaining = newSize;
+            localOrder.order.encoder.price(newPrice).size(newOrderQty);
+            localOrder.remaining = newRemaining;
 
             // Add to new price level
             OrderBookLevel newLevel = book.get(newPrice);
@@ -290,11 +302,10 @@ public final class MbpBook {
             }
             localOrder.phantomVolume = newLevel.size;
             newLevel.localOrders.addLast(localOrder);
-        } else if (oldSize != newSize) {
+        } else {
             // Only size changed — update in place, keep queue position
-            long sizeDiff = newSize - oldSize;
-            localOrder.remaining = Math.max(0, localOrder.remaining + sizeDiff);
-            localOrder.order.encoder.size(newSize);
+            localOrder.order.encoder.size(newOrderQty);
+            localOrder.remaining = newRemaining;
         }
 
         return true;

@@ -336,21 +336,55 @@ class MBPBookTest {
     }
 
     @Test
-    void testModifyLocalOrderSizeDecreaseBelowRemaining() {
+    void testModifyLocalOrderToAtOrBelowFilled_IsRejectedAndOrderUnchanged() {
         List<BidAskLevel> levels = List.of(makeBidAskLevel(100, 50, 101, 40));
         book.onMarketUpdate(levels);
 
-        // Order size=10, but after a partial fill remaining would be 3
-        // Simulate by placing with explicit remaining
+        // Order qty 10 with 7 already filled, so 3 remaining
         Order order = makeOrder(100, 10, Side.Bid, 1L);
         book.addLocalOrder(order, 3);
 
-        // Modify size to 2 (sizeDiff = 2-10 = -8, remaining = max(0, 3 + (-8)) = 0)
-        assertTrue(book.modifyLocalOrder(1L, 100, 2));
+        // FIX: an order quantity of 2 is below the 7 filled, so the replace is rejected
+        assertFalse(book.modifyLocalOrder(1L, 100, 2));
+        assertFalse(book.modifyLocalOrder(1L, 100, 7));
+
+        LocalOrder unchanged = book.localBidOrders().get(1L);
+        assertEquals(10, unchanged.order.decoder.size());
+        assertEquals(3, unchanged.remaining);
+    }
+
+    @Test
+    void testModifyLocalOrderPriceChangeAfterPartialFill_KeepsFillsCounted() {
+        List<BidAskLevel> levels = List.of(makeBidAskLevel(100, 50, 101, 40), makeBidAskLevel(99, 30, 102, 35));
+        book.onMarketUpdate(levels);
+
+        // Order qty 10 with 3 filled. Re-pricing with the same order qty leaves 7 working, not 10.
+        Order order = makeOrder(100, 10, Side.Bid, 1L);
+        book.addLocalOrder(order, 7);
+
+        assertTrue(book.modifyLocalOrder(1L, 99, 10));
 
         LocalOrder amended = book.localBidOrders().get(1L);
-        assertEquals(2, amended.order.decoder.size());
-        assertEquals(0, amended.remaining);
+        assertEquals(10, amended.order.decoder.size());
+        assertEquals(7, amended.remaining);
+    }
+
+    @Test
+    void testModifyLocalOrderAfterPartialFill_OrderQtyIncludesFills() {
+        List<BidAskLevel> levels = List.of(makeBidAskLevel(100, 50, 101, 40), makeBidAskLevel(99, 30, 102, 35));
+        book.onMarketUpdate(levels);
+
+        // 3 filled; to have 10 working again the order qty must be 13, at a new price or the same one.
+        Order order = makeOrder(100, 10, Side.Bid, 1L);
+        book.addLocalOrder(order, 7);
+        assertTrue(book.modifyLocalOrder(1L, 100, 13));
+        assertEquals(10, book.localBidOrders().get(1L).remaining);
+        assertEquals(50, book.localBidOrders().get(1L).phantomVolume); // size-only: queue kept
+
+        Order other = makeOrder(100, 10, Side.Bid, 2L);
+        book.addLocalOrder(other, 7);
+        assertTrue(book.modifyLocalOrder(2L, 99, 13));
+        assertEquals(10, book.localBidOrders().get(2L).remaining);
     }
 
     @Test

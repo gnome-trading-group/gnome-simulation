@@ -76,7 +76,8 @@ events:
         filled_qty: 4
         leaves_qty: 6
 
-  # Modify size 10 → 13 while partially filled: sizeDiff=+3, remaining = 6+3 = 9
+  # Modify order qty 10 → 13 while partially filled. FIX: order qty includes the 4 filled,
+  # so leaves = 13 - 4 = 9 and the ack reports cumulative 4, leaves 9.
   - type: modify_order
     client_oid: BID_2
     new_price: 100
@@ -85,9 +86,10 @@ events:
       - exec_type: NEW
         order_status: NEW
         client_oid: BID_2
-        leaves_qty: 13
+        cumulative_qty: 4
+        leaves_qty: 9
 
-  # Trade fills the 9 remaining units: cumulative = 13 - 0 = 13
+  # Trade fills the 9 remaining units: cumulative = 4 + 9 = 13
   - type: trade
     side: Ask
     price: 100
