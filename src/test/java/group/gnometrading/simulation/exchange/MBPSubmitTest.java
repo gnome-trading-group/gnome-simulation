@@ -34,7 +34,7 @@ class MBPSubmitTest {
     static class DummyFeeModel implements FeeModel {
         @Override
         public double calculateFee(long price, long quantity, boolean isMaker) {
-            double notional = (double) price * quantity;
+            double notional = price * ((double) quantity / Statics.SIZE_SCALING_FACTOR);
             return notional * (isMaker ? 0.03 : 0.05);
         }
     }

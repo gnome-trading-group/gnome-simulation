@@ -26,7 +26,7 @@ class ParametricFeeModelTest {
     void makerFeeUsesCorrectRate() {
         long price = (long) (0.50 * PRICE_SCALE);
         long qty = 100 * SIZE_SCALE;
-        double expected = 100.0 * MAKER_RATE * 0.25 * PRICE_SCALE * SIZE_SCALE;
+        double expected = 100.0 * MAKER_RATE * 0.25 * PRICE_SCALE;
         assertEquals(expected, parametricModel.calculateFee(price, qty, true), 1e-3);
     }
 
@@ -35,9 +35,8 @@ class ParametricFeeModelTest {
         // p=0.50 maximizes p*(1-p) = 0.25
         long price = (long) (0.50 * PRICE_SCALE);
         long qty = 100 * SIZE_SCALE;
-        // expected = C * feeRate * p * (1-p) = 100 * 0.07 * 0.25 = 1.75 dollars
-        // returned in scaled units = 1.75 * PRICE_SCALE * SIZE_SCALE
-        double expected = 100.0 * TAKER_RATE * 0.25 * PRICE_SCALE * SIZE_SCALE;
+        // expected = C * feeRate * p * (1-p) = 100 * 0.07 * 0.25 = 1.75 dollars, returned in price units
+        double expected = 100.0 * TAKER_RATE * 0.25 * PRICE_SCALE;
         assertEquals(expected, parametricModel.calculateFee(price, qty, false), 1e-3);
     }
 
@@ -49,7 +48,7 @@ class ParametricFeeModelTest {
         double feeAt01 = parametricModel.calculateFee(priceAt01, qty, false);
         double feeAt99 = parametricModel.calculateFee(priceAt99, qty, false);
         // p*(1-p) is symmetric: 0.01*0.99 == 0.99*0.01; allow FP rounding at scaling boundaries
-        assertEquals(feeAt01, feeAt99, 1e6);
+        assertEquals(feeAt01, feeAt99, 1e-3);
     }
 
     @Test

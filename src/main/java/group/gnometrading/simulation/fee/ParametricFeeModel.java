@@ -20,12 +20,6 @@ public final class ParametricFeeModel implements FeeModel {
         }
         double normalizedPrice = (double) price / Statics.PRICE_SCALING_FACTOR;
         double normalizedQty = (double) quantity / Statics.SIZE_SCALING_FACTOR;
-        // toScaledFee() divides by SIZE_SCALING_FACTOR, so return actual_fee * PRICE_SCALE * SIZE_SCALE
-        return normalizedQty
-                * rate
-                * normalizedPrice
-                * (1.0 - normalizedPrice)
-                * Statics.PRICE_SCALING_FACTOR
-                * Statics.SIZE_SCALING_FACTOR;
+        return normalizedQty * rate * normalizedPrice * (1.0 - normalizedPrice) * Statics.PRICE_SCALING_FACTOR;
     }
 }

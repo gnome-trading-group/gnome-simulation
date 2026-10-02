@@ -16,7 +16,6 @@ import group.gnometrading.schemas.RejectReason;
 import group.gnometrading.schemas.Schema;
 import group.gnometrading.schemas.SchemaType;
 import group.gnometrading.schemas.Side;
-import group.gnometrading.schemas.Statics;
 import group.gnometrading.schemas.TimeInForce;
 import group.gnometrading.simulation.book.BidAskLevel;
 import group.gnometrading.simulation.book.LocalOrder;
@@ -203,7 +202,7 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
                 price,
                 cumulativeQty,
                 remainingAfterFill,
-                toScaledFee(feeModel.calculateFee(price, filledQty, true)));
+                (long) feeModel.calculateFee(price, filledQty, true));
         report.encoder
                 .exchangeId((short) localOrder.order.decoder.exchangeId())
                 .securityId(localOrder.order.decoder.securityId())
@@ -233,7 +232,7 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
         OrderStatus status = totalFilled == orderSize ? OrderStatus.FILLED : OrderStatus.PARTIALLY_FILLED;
         long remaining = orderSize - totalFilled;
 
-        long feeScaled = toScaledFee(totalFee);
+        long feeScaled = (long) totalFee;
         OrderExecutionReport report = makeReport(
                 order.getClientOidCounter(),
                 order.getClientOidStrategyId(),
@@ -291,7 +290,7 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
             }
 
             // Aggressive limit orders that immediately cross the spread are taking liquidity.
-            long feeScaled = toScaledFee(totalFee);
+            long feeScaled = (long) totalFee;
             long vwapPrice = (long) (totalNotional / totalFilled);
             long remaining = orderSize - totalFilled;
 
@@ -368,12 +367,6 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
     }
 
     // --- Factory helpers ---
-
-    private static long toScaledFee(double fee) {
-        // fee = notional_scaled * rate = (qty * SIZE_SCALE) * (price * PRICE_SCALE) * rate
-        // Dividing by SIZE_SCALE yields actual_fee * PRICE_SCALE, matching the SBE price unit.
-        return (long) (fee / Statics.SIZE_SCALING_FACTOR);
-    }
 
     private OrderExecutionReport makeReport(
             long clientOid,
