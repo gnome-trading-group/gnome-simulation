@@ -248,6 +248,25 @@ class MBPMarketDataTest {
         assertEquals(0, report.decoder.leavesQty());
     }
 
+    /** Sizes past the old 32-bit limit (~4,295 units at 1e6 scaling), which used to wrap silently. */
+    @Test
+    void testFillLargerThanTheOld32BitLimit() {
+        final long twentyThousand = 20_000_000_000L;
+        final long tenThousand = 10_000_000_000L;
+        exchange.onMarketData(makeSingleLevelUpdate(100, twentyThousand, 102, twentyThousand));
+        exchange.submitOrder(
+                makeOrder(102, tenThousand, Side.Ask, 1L, OrderType.LIMIT, TimeInForce.GOOD_TILL_CANCELED));
+
+        // The 20,000 resting ahead of us fill first; the rest of the 30,000 bought reaches our order.
+        List<OrderExecutionReport> reports = exchange.onMarketData(makeTrade(Side.Bid, 102, 30_000_000_000L));
+
+        OrderExecutionReport report = reports.get(reports.size() - 1);
+        assertEquals(ExecType.FILL, report.decoder.execType());
+        assertEquals(tenThousand, report.decoder.filledQty());
+        assertEquals(tenThousand, report.decoder.cumulativeQty());
+        assertEquals(0, report.decoder.leavesQty());
+    }
+
     @Test
     void testTradePartialFillLocalOrder() {
         // Seed the book

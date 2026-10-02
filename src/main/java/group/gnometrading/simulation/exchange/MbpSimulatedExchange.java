@@ -390,10 +390,10 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
         report.encoder
                 .execType(execType)
                 .orderStatus(orderStatus)
-                .filledQty((int) filledQty)
+                .filledQty(filledQty)
                 .fillPrice(fillPrice)
-                .cumulativeQty((int) cumulativeQty)
-                .leavesQty((int) leavesQty)
+                .cumulativeQty(cumulativeQty)
+                .leavesQty(leavesQty)
                 .fee(feeScaled);
         return report;
     }
