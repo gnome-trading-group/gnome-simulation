@@ -3,6 +3,7 @@ package group.gnometrading.simulation.config;
 import group.gnometrading.resources.Properties;
 import group.gnometrading.simulation.exchange.MbpSimulatedExchange;
 import group.gnometrading.simulation.exchange.SimulatedExchange;
+import group.gnometrading.simulation.latency.LatencySeeds;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -13,9 +14,16 @@ public final class ExchangeProfileConfig {
     public LatencyConfig orderProcessingLatency = new LatencyConfig.Static();
     public QueueModelConfig queueModel = new QueueModelConfig.RiskAverse();
 
-    public SimulatedExchange toSimulatedExchange() {
+    /**
+     * Builds the exchange with its random latency models seeded from {@code seed}, each with its own stream, unless a
+     * model pins its own seed. Pass a different seed per listing so listings don't share latency draws.
+     */
+    public SimulatedExchange toSimulatedExchange(long seed) {
         return new MbpSimulatedExchange(
-                feeModel.toModel(), networkLatency.toModel(), orderProcessingLatency.toModel(), queueModel.toModel());
+                feeModel.toModel(),
+                networkLatency.toModel(LatencySeeds.derive(seed, LatencySeeds.NETWORK_STREAM)),
+                orderProcessingLatency.toModel(LatencySeeds.derive(seed, LatencySeeds.ORDER_PROCESSING_STREAM)),
+                queueModel.toModel());
     }
 
     public static ExchangeProfileConfig resolveForListing(Properties properties, int listingId) {

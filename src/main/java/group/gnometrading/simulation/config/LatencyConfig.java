@@ -16,7 +16,11 @@ import java.util.Map;
 })
 public abstract class LatencyConfig {
 
-    public abstract LatencyModel toModel();
+    /**
+     * Builds the model. A random model draws from {@code seed} unless its config pins a seed of its own; the caller
+     * owns the seed so runs are reproducible on its terms.
+     */
+    public abstract LatencyModel toModel(long seed);
 
     public static LatencyConfig fromMap(Map<String, String> map) {
         String model = map.getOrDefault("model", "static");
@@ -24,7 +28,8 @@ public abstract class LatencyConfig {
             Gaussian cfg = new Gaussian();
             cfg.mu = Double.parseDouble(map.getOrDefault("mu", "0.0"));
             cfg.sigma = Double.parseDouble(map.getOrDefault("sigma", "0.0"));
-            cfg.seed = Long.parseLong(map.getOrDefault("seed", Long.toString(GaussianLatency.DEFAULT_SEED)));
+            String seed = map.get("seed");
+            cfg.seed = seed == null ? null : Long.parseLong(seed);
             return cfg;
         }
         if ("maker_taker".equals(model)) {
@@ -43,7 +48,7 @@ public abstract class LatencyConfig {
         public long latencyNanos;
 
         @Override
-        public LatencyModel toModel() {
+        public LatencyModel toModel(long seed) {
             return new StaticLatency(latencyNanos);
         }
     }
@@ -51,11 +56,12 @@ public abstract class LatencyConfig {
     public static final class Gaussian extends LatencyConfig {
         public double mu;
         public double sigma;
-        public long seed = GaussianLatency.DEFAULT_SEED;
+        /** Pins this model's draws. Null means the model uses the seed it is built with. */
+        public Long seed;
 
         @Override
-        public LatencyModel toModel() {
-            return new GaussianLatency(mu, sigma, seed);
+        public LatencyModel toModel(long seed) {
+            return new GaussianLatency(mu, sigma, this.seed != null ? this.seed : seed);
         }
     }
 
@@ -65,7 +71,7 @@ public abstract class LatencyConfig {
         public long makerDelayNanos;
 
         @Override
-        public LatencyModel toModel() {
+        public LatencyModel toModel(long seed) {
             return new MakerTakerLatencyModel(baseNanos, takerDelayNanos, makerDelayNanos);
         }
     }

@@ -13,15 +13,9 @@ import java.util.Random;
  */
 public final class GaussianLatency implements LatencyModel {
 
-    public static final long DEFAULT_SEED = 0x9E3779B97F4A7C15L;
-
     private final double mu;
     private final double sigma;
     private final Random random;
-
-    public GaussianLatency(double mu, double sigma) {
-        this(mu, sigma, DEFAULT_SEED);
-    }
 
     public GaussianLatency(double mu, double sigma, long seed) {
         this.mu = mu;

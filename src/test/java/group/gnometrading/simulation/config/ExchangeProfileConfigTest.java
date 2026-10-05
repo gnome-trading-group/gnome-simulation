@@ -2,6 +2,9 @@ package group.gnometrading.simulation.config;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import group.gnometrading.simulation.latency.LatencyModel;
+import group.gnometrading.simulation.latency.LatencySeeds;
+import java.util.Arrays;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -74,6 +77,36 @@ class ExchangeProfileConfigTest {
         LatencyConfig.Gaussian g = (LatencyConfig.Gaussian) result;
         assertEquals(0.0, g.mu);
         assertEquals(0.0, g.sigma);
+        assertNull(g.seed);
+    }
+
+    @Test
+    void latency_gaussianExplicitSeed() {
+        LatencyConfig result = LatencyConfig.fromMap(Map.of("model", "gaussian", "seed", "42"));
+        assertEquals(42L, ((LatencyConfig.Gaussian) result).seed);
+    }
+
+    @Test
+    void latency_gaussianExplicitSeedWinsOverDerived() {
+        LatencyConfig.Gaussian cfg = gaussian(1_000_000.0, 100_000.0);
+        cfg.seed = 42L;
+        assertArrayEquals(draws(cfg.toModel(1L)), draws(cfg.toModel(2L)));
+    }
+
+    @Test
+    void latency_gaussianDerivedSeedsGiveIndependentDraws() {
+        LatencyConfig.Gaussian cfg = gaussian(1_000_000.0, 100_000.0);
+        assertArrayEquals(draws(cfg.toModel(7L)), draws(cfg.toModel(7L)));
+        assertFalse(Arrays.equals(draws(cfg.toModel(7L)), draws(cfg.toModel(8L))));
+    }
+
+    @Test
+    void latencySeeds_streamsAndBasesDiffer() {
+        long network = LatencySeeds.derive(5L, LatencySeeds.NETWORK_STREAM);
+        long processing = LatencySeeds.derive(5L, LatencySeeds.ORDER_PROCESSING_STREAM);
+        assertNotEquals(network, processing);
+        assertNotEquals(network, LatencySeeds.derive(6L, LatencySeeds.NETWORK_STREAM));
+        assertEquals(network, LatencySeeds.derive(5L, LatencySeeds.NETWORK_STREAM));
     }
 
     @Test
@@ -155,6 +188,21 @@ class ExchangeProfileConfigTest {
         assertInstanceOf(QueueModelConfig.Probabilistic.class, profile.queueModel);
         assertEquals(5_000_000L, ((LatencyConfig.Static) profile.orderProcessingLatency).latencyNanos);
         assertEquals(0.3, ((QueueModelConfig.Probabilistic) profile.queueModel).cancelAheadProbability);
-        assertNotNull(profile.toSimulatedExchange());
+        assertNotNull(profile.toSimulatedExchange(1L));
+    }
+
+    private static LatencyConfig.Gaussian gaussian(double mu, double sigma) {
+        LatencyConfig.Gaussian cfg = new LatencyConfig.Gaussian();
+        cfg.mu = mu;
+        cfg.sigma = sigma;
+        return cfg;
+    }
+
+    private static long[] draws(LatencyModel model) {
+        long[] out = new long[16];
+        for (int i = 0; i < out.length; i++) {
+            out[i] = model.simulate();
+        }
+        return out;
     }
 }
