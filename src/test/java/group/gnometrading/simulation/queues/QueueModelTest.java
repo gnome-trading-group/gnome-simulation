@@ -62,7 +62,7 @@ class QueueModelTest {
                         List.of(new LocalOrderSpec(10, 3, 0)),
                         5,
                         List.of(new ExpectedFill(1L, 2)),
-                        List.of(new LocalOrderSpec(8, -2, 5)),
+                        List.of(new LocalOrderSpec(8, 0, 5)),
                         List.of(1L)),
 
                 // Trade consumes phantom and fills entire order (should be removed)
@@ -70,7 +70,7 @@ class QueueModelTest {
                         List.of(new LocalOrderSpec(2, 1, 0)),
                         5,
                         List.of(new ExpectedFill(1L, 2)),
-                        List.of(new LocalOrderSpec(0, -4, 5)),
+                        List.of(new LocalOrderSpec(0, 0, 5)),
                         List.of()),
 
                 // Trade fills multiple orders, last order partially filled
@@ -78,10 +78,7 @@ class QueueModelTest {
                         List.of(new LocalOrderSpec(2, 1, 0), new LocalOrderSpec(3, 1, 0), new LocalOrderSpec(4, 1, 0)),
                         7,
                         List.of(new ExpectedFill(1L, 2), new ExpectedFill(2L, 3), new ExpectedFill(3L, 1)),
-                        List.of(
-                                new LocalOrderSpec(0, -6, 7),
-                                new LocalOrderSpec(0, -6, 7),
-                                new LocalOrderSpec(3, -6, 7)),
+                        List.of(new LocalOrderSpec(0, 0, 7), new LocalOrderSpec(0, 0, 7), new LocalOrderSpec(3, 0, 7)),
                         List.of(3L)),
 
                 // Trade larger than all orders (all removed)
@@ -89,7 +86,7 @@ class QueueModelTest {
                         List.of(new LocalOrderSpec(2, 1, 0), new LocalOrderSpec(3, 0, 0)),
                         10,
                         List.of(new ExpectedFill(1L, 2), new ExpectedFill(2L, 3)),
-                        List.of(new LocalOrderSpec(0, -9, 10), new LocalOrderSpec(0, -10, 10)),
+                        List.of(new LocalOrderSpec(0, 0, 10), new LocalOrderSpec(0, 0, 10)),
                         List.of()),
 
                 // Trade with zero phantom, partial fill
@@ -97,7 +94,7 @@ class QueueModelTest {
                         List.of(new LocalOrderSpec(5, 0, 0)),
                         3,
                         List.of(new ExpectedFill(1L, 3)),
-                        List.of(new LocalOrderSpec(2, -3, 3)),
+                        List.of(new LocalOrderSpec(2, 0, 3)),
                         List.of(1L)),
 
                 // Trade with zero phantom, full fill
@@ -105,7 +102,7 @@ class QueueModelTest {
                         List.of(new LocalOrderSpec(3, 0, 0)),
                         3,
                         List.of(new ExpectedFill(1L, 3)),
-                        List.of(new LocalOrderSpec(0, -3, 3)),
+                        List.of(new LocalOrderSpec(0, 0, 3)),
                         List.of()),
 
                 // Trade with negative phantom, partial fill
@@ -113,7 +110,7 @@ class QueueModelTest {
                         List.of(new LocalOrderSpec(5, -2, 0)),
                         3,
                         List.of(new ExpectedFill(1L, 3)),
-                        List.of(new LocalOrderSpec(2, -5, 3)),
+                        List.of(new LocalOrderSpec(2, 0, 3)),
                         List.of(1L)),
 
                 // Trade with negative phantom, full fill
@@ -121,7 +118,7 @@ class QueueModelTest {
                         List.of(new LocalOrderSpec(3, -2, 0)),
                         3,
                         List.of(new ExpectedFill(1L, 3)),
-                        List.of(new LocalOrderSpec(0, -5, 3)),
+                        List.of(new LocalOrderSpec(0, 0, 3)),
                         List.of()),
 
                 // Three orders, all removed
@@ -130,18 +127,26 @@ class QueueModelTest {
                         20,
                         List.of(new ExpectedFill(1L, 2), new ExpectedFill(2L, 3), new ExpectedFill(3L, 4)),
                         List.of(
-                                new LocalOrderSpec(0, -19, 20),
-                                new LocalOrderSpec(0, -20, 20),
-                                new LocalOrderSpec(0, -20, 20)),
+                                new LocalOrderSpec(0, 0, 20),
+                                new LocalOrderSpec(0, 0, 20),
+                                new LocalOrderSpec(0, 0, 20)),
                         List.of()),
 
-                // Three orders, only first filled (others still have phantom)
+                // Three orders, only first filled; our own fill does not move the others up, only market volume does
                 new TestCase(
                         List.of(new LocalOrderSpec(2, 1, 0), new LocalOrderSpec(3, 5, 0), new LocalOrderSpec(4, 5, 0)),
                         3,
                         List.of(new ExpectedFill(1L, 2)),
-                        List.of(new LocalOrderSpec(0, -2, 3), new LocalOrderSpec(3, 2, 3), new LocalOrderSpec(4, 2, 3)),
-                        List.of(2L, 3L)));
+                        List.of(new LocalOrderSpec(0, 0, 3), new LocalOrderSpec(3, 4, 3), new LocalOrderSpec(4, 4, 3)),
+                        List.of(2L, 3L)),
+
+                // Second order still has market volume ahead after the first fills: it gets nothing
+                new TestCase(
+                        List.of(new LocalOrderSpec(20, 10, 0), new LocalOrderSpec(10, 50, 0)),
+                        60,
+                        List.of(new ExpectedFill(1L, 20)),
+                        List.of(new LocalOrderSpec(0, 0, 60), new LocalOrderSpec(10, 10, 60)),
+                        List.of(2L)));
     }
 
     @Test

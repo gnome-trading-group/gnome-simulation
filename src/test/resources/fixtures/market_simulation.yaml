@@ -1316,7 +1316,8 @@ events:
         leaves_qty: 0
 
   # ============================================================
-  # PHASE 9 — Multi-level fill setup: place BID_26 and ASK_26
+  # PHASE 9 — Multi-level fill setup: place BID_26 (ASK_26 follows once it has filled,
+  # since resting both at once would cross our own orders)
   # ============================================================
 
   - type: submit_order
@@ -1331,20 +1332,6 @@ events:
       - exec_type: NEW
         order_status: NEW
         client_oid: BID_26
-        leaves_qty: 20
-
-  - type: submit_order
-    order:
-      side: Ask
-      price: 100
-      size: 20
-      client_oid: ASK_26
-      order_type: LIMIT
-      tif: GTC
-    expected_reports:
-      - exec_type: NEW
-        order_status: NEW
-        client_oid: ASK_26
         leaves_qty: 20
 
   # ============================================================
@@ -1372,6 +1359,20 @@ events:
         filled_qty: 8
         leaves_qty: 0
         cumulative_qty: 20
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 100
+      size: 20
+      client_oid: ASK_26
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_26
+        leaves_qty: 20
 
   # ============================================================
   # PHASE 10b — Two-level bid update fully fills ASK_26
@@ -1402,7 +1403,8 @@ events:
         cumulative_qty: 20
 
   # ============================================================
-  # PHASE 11 — Multi-level fill for BID_27 and ASK_27
+  # PHASE 11 — Multi-level fill for BID_27, then ASK_27 (placed after BID_27 fills so we
+  # never cross our own orders)
   # ============================================================
 
   - type: submit_order
@@ -1417,20 +1419,6 @@ events:
       - exec_type: NEW
         order_status: NEW
         client_oid: BID_27
-        leaves_qty: 15
-
-  - type: submit_order
-    order:
-      side: Ask
-      price: 102
-      size: 15
-      client_oid: ASK_27
-      order_type: LIMIT
-      tif: GTC
-    expected_reports:
-      - exec_type: NEW
-        order_status: NEW
-        client_oid: ASK_27
         leaves_qty: 15
 
   - type: market_update
@@ -1452,6 +1440,20 @@ events:
         filled_qty: 8
         leaves_qty: 0
         cumulative_qty: 15
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 102
+      size: 15
+      client_oid: ASK_27
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_27
+        leaves_qty: 15
 
   - type: market_update
     levels:

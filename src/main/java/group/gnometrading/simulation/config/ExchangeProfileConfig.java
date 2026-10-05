@@ -1,6 +1,7 @@
 package group.gnometrading.simulation.config;
 
 import group.gnometrading.resources.Properties;
+import group.gnometrading.simulation.book.SelfTradePrevention;
 import group.gnometrading.simulation.exchange.MbpSimulatedExchange;
 import group.gnometrading.simulation.exchange.SimulatedExchange;
 import group.gnometrading.simulation.latency.LatencySeeds;
@@ -13,6 +14,7 @@ public final class ExchangeProfileConfig {
     public LatencyConfig networkLatency = new LatencyConfig.Static();
     public LatencyConfig orderProcessingLatency = new LatencyConfig.Static();
     public QueueModelConfig queueModel = new QueueModelConfig.RiskAverse();
+    public SelfTradePrevention selfTradePrevention = SelfTradePrevention.CANCEL_INCOMING;
 
     /**
      * Builds the exchange with its random latency models seeded from {@code seed}, each with its own stream, unless a
@@ -23,7 +25,8 @@ public final class ExchangeProfileConfig {
                 feeModel.toModel(),
                 networkLatency.toModel(LatencySeeds.derive(seed, LatencySeeds.NETWORK_STREAM)),
                 orderProcessingLatency.toModel(LatencySeeds.derive(seed, LatencySeeds.ORDER_PROCESSING_STREAM)),
-                queueModel.toModel());
+                queueModel.toModel(),
+                selfTradePrevention);
     }
 
     public static ExchangeProfileConfig resolveForListing(Properties properties, int listingId) {
@@ -49,6 +52,10 @@ public final class ExchangeProfileConfig {
         profile.networkLatency = LatencyConfig.fromMap(subMap(map, "network.latency."));
         profile.orderProcessingLatency = LatencyConfig.fromMap(subMap(map, "order.latency."));
         profile.queueModel = QueueModelConfig.fromMap(subMap(map, "queue."));
+        String selfTradePrevention = map.get("self.trade.prevention");
+        if (selfTradePrevention != null) {
+            profile.selfTradePrevention = SelfTradePrevention.valueOf(selfTradePrevention);
+        }
         return profile;
     }
 

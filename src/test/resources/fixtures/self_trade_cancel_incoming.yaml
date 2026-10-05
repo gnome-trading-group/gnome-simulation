@@ -1,0 +1,79 @@
+name: self_trade_cancel_incoming
+description: >-
+  Self-trade prevention, cancel-incoming (Kalshi taker_at_cross). An incoming order takes the market volume
+  queued ahead of our own resting order; once it would reach our order it stops, and its remainder is
+  cancelled whatever its time in force. A market order that meets only our own order is cancelled, not rejected.
+self_trade_prevention: CANCEL_INCOMING
+initial_levels:
+  - ask_px: 102
+    ask_sz: 10
+
+events:
+
+  # Our ask joins the back of 102, behind 10 of market volume.
+  - type: submit_order
+    order:
+      side: Ask
+      price: 102
+      size: 5
+      client_oid: ASK_1
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_1
+        leaves_qty: 5
+
+  # Buy 15 at 102: takes the 10 ahead of ASK_1, then would hit ASK_1. Stops there; the GTC remainder is
+  # cancelled rather than resting against our own ask.
+  - type: submit_order
+    order:
+      side: Bid
+      price: 102
+      size: 15
+      client_oid: BID_1
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: PARTIAL_FILL
+        order_status: PARTIALLY_FILLED
+        client_oid: BID_1
+        filled_qty: 10
+        fill_price: 102
+        liquidity: TAKER
+        leaves_qty: 5
+        cumulative_qty: 10
+      - exec_type: CANCEL
+        order_status: CANCELED
+        client_oid: BID_1
+        cumulative_qty: 10
+
+  # The market leaves 102; only ASK_1 is left there.
+  - type: market_update
+    levels:
+      - ask_px: 103
+        ask_sz: 10
+    expected_reports: []
+
+  # A market buy meets our own ask first: cancelled with nothing filled.
+  - type: submit_order
+    order:
+      side: Bid
+      price: 0
+      size: 5
+      client_oid: MKT_1
+      order_type: MARKET
+      tif: GTC
+    expected_reports:
+      - exec_type: CANCEL
+        order_status: CANCELED
+        client_oid: MKT_1
+
+  # ASK_1 was never touched.
+  - type: cancel_order
+    client_oid: ASK_1
+    expected_reports:
+      - exec_type: CANCEL
+        order_status: CANCELED
+        client_oid: ASK_1

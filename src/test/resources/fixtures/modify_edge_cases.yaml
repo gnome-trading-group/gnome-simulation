@@ -2,7 +2,7 @@ name: modify_edge_cases
 description: >-
   Edge cases for modify_order: size-only change (no price), modify a partially
   filled order with a size increase, and modify to a price that crosses the
-  opposite book (fill triggered on the next market_update).
+  opposite book (it takes liquidity at once, like a new order at that price).
 initial_levels: []
 
 events:
@@ -103,7 +103,7 @@ events:
         cumulative_qty: 13
 
   # ============================================================
-  # CASE 3: Modify to a crossing price (fill on next market_update)
+  # CASE 3: Modify to a crossing price (fills immediately as taker)
   # ============================================================
 
   # Seed asks at 105
@@ -128,7 +128,7 @@ events:
         client_oid: BID_3
         leaves_qty: 8
 
-  # Modify price 100 → 106, now above the ask at 105
+  # Modify price 100 → 106, now above the ask at 105: acked, then filled at 105 as a taker
   - type: modify_order
     client_oid: BID_3
     new_price: 106
@@ -138,15 +138,10 @@ events:
         order_status: NEW
         client_oid: BID_3
         leaves_qty: 8
-
-  # Same market_update retriggers reconcile → book is crossed → fill
-  - type: market_update
-    levels:
-      - ask_px: 105
-        ask_sz: 10
-    expected_reports:
       - exec_type: FILL
         order_status: FILLED
         client_oid: BID_3
         filled_qty: 8
+        fill_price: 105
+        liquidity: TAKER
         leaves_qty: 0

@@ -1,8 +1,8 @@
 name: market_order_with_liquidity
 description: >-
   Market orders against a book with resting liquidity.
-  Tests: full fill (single level), full fill (multi-level), partial fill
-  (insufficient total depth), and sell-side market orders.
+  Tests: full fill (single level), partial fill across levels, and rejection once every level has been
+  taken, on both sides. Liquidity taken by one order is not offered to the next.
   Partial fills produce 2 reports (PARTIAL_FILL + CANCEL); full fills produce 1 (FILL).
 initial_levels:
   - ask_px: 102
@@ -35,7 +35,7 @@ events:
         leaves_qty: 0
         cumulative_qty: 8
 
-  # MARKET BUY — full fill, multi-level (20 = ask 102/10 + ask 103/10)
+  # MARKET BUY — partial fill across levels (17 left = ask 102/2 + ask 103/15); PARTIAL_FILL + CANCEL
   - type: submit_order
     order:
       side: Bid
@@ -45,14 +45,20 @@ events:
       order_type: MARKET
       tif: GTC
     expected_reports:
-      - exec_type: FILL
-        order_status: FILLED
+      - exec_type: PARTIAL_FILL
+        order_status: PARTIALLY_FILLED
         client_oid: MKT_BID_2
-        filled_qty: 20
+        filled_qty: 17
+        leaves_qty: 3
+        cumulative_qty: 17
+      - exec_type: CANCEL
+        order_status: CANCELED
+        client_oid: MKT_BID_2
+        filled_qty: 0
         leaves_qty: 0
-        cumulative_qty: 20
+        cumulative_qty: 17
 
-  # MARKET BUY — partial fill (30 > total ask depth 25); emits PARTIAL_FILL + CANCEL
+  # MARKET BUY — every ask has been taken: rejected for no liquidity
   - type: submit_order
     order:
       side: Bid
@@ -62,18 +68,9 @@ events:
       order_type: MARKET
       tif: GTC
     expected_reports:
-      - exec_type: PARTIAL_FILL
-        order_status: PARTIALLY_FILLED
+      - exec_type: REJECT
+        order_status: REJECTED
         client_oid: MKT_BID_3
-        filled_qty: 25
-        leaves_qty: 5
-        cumulative_qty: 25
-      - exec_type: CANCEL
-        order_status: PARTIALLY_FILLED
-        client_oid: MKT_BID_3
-        filled_qty: 0
-        leaves_qty: 0
-        cumulative_qty: 25
 
   # ============================================================
   # MARKET SELL — full fill, single level (5 <= bid 98/8)
@@ -94,7 +91,7 @@ events:
         leaves_qty: 0
         cumulative_qty: 5
 
-  # MARKET SELL — full fill, multi-level (15 = bid 98/8 + bid 97/7)
+  # MARKET SELL — full fill, multi-level (15 = bid 98/3 left + bid 97/12)
   - type: submit_order
     order:
       side: Ask
@@ -111,7 +108,7 @@ events:
         leaves_qty: 0
         cumulative_qty: 15
 
-  # MARKET SELL — partial fill (25 > total bid depth 20); emits PARTIAL_FILL + CANCEL
+  # MARKET SELL — every bid has been taken: rejected for no liquidity
   - type: submit_order
     order:
       side: Ask
@@ -121,15 +118,6 @@ events:
       order_type: MARKET
       tif: GTC
     expected_reports:
-      - exec_type: PARTIAL_FILL
-        order_status: PARTIALLY_FILLED
+      - exec_type: REJECT
+        order_status: REJECTED
         client_oid: MKT_ASK_3
-        filled_qty: 20
-        leaves_qty: 5
-        cumulative_qty: 20
-      - exec_type: CANCEL
-        order_status: PARTIALLY_FILLED
-        client_oid: MKT_ASK_3
-        filled_qty: 0
-        leaves_qty: 0
-        cumulative_qty: 20

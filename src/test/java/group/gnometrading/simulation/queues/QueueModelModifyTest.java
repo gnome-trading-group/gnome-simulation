@@ -134,6 +134,31 @@ class QueueModelModifyTest {
     }
 
     @Test
+    void testProbabilisticOnModify_neverLeavesMoreAheadThanTheLevelHolds() {
+        ProbabilisticQueueModel model = new ProbabilisticQueueModel(0.5);
+        ArrayDeque<LocalOrder> queue = new ArrayDeque<>();
+        LocalOrder lo = makeLocalOrder(30, 10);
+        queue.add(lo);
+
+        // 40 shrinks to 10: half of the 30 cancelled is 15 ahead of us, but only 10 is left at the level.
+        model.onModify(40, 10, queue);
+
+        assertEquals(10, lo.phantomVolume);
+    }
+
+    @Test
+    void testProbabilisticOnModify_zeroProbabilityStillCapsAtTheLevel() {
+        ProbabilisticQueueModel model = new ProbabilisticQueueModel(0.0);
+        ArrayDeque<LocalOrder> queue = new ArrayDeque<>();
+        LocalOrder lo = makeLocalOrder(30, 10);
+        queue.add(lo);
+
+        model.onModify(40, 10, queue);
+
+        assertEquals(10, lo.phantomVolume);
+    }
+
+    @Test
     void testProbabilisticOnModify_zeroProbability() {
         ProbabilisticQueueModel model = new ProbabilisticQueueModel(0.0);
         LocalOrder order = makeLocalOrder(10, 5);

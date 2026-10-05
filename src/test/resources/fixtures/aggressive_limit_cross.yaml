@@ -3,6 +3,7 @@ description: >-
   Aggressive limit orders that immediately cross resting market depth.
   Tests full cross (FILL), partial cross with GTC remainder (NEW + PARTIAL_FILL),
   and subsequent trade filling the resting remainder — for both bid and ask sides.
+  Liquidity taken by one order is not offered to the next: the book never shows our trades.
 initial_levels:
   - ask_px: 102
     ask_sz: 10
@@ -32,7 +33,7 @@ events:
         leaves_qty: 0
         cumulative_qty: 8
 
-  # Partial cross: size 15 > ask depth 10 → NEW + PARTIAL_FILL; remainder 5 rests
+  # Partial cross: BID_1 took 8 of the 10, so only 2 are left → NEW + PARTIAL_FILL; remainder 13 rests
   - type: submit_order
     order:
       side: Bid
@@ -49,21 +50,22 @@ events:
       - exec_type: PARTIAL_FILL
         order_status: PARTIALLY_FILLED
         client_oid: BID_2
-        filled_qty: 10
-        leaves_qty: 5
-        cumulative_qty: 10
+        filled_qty: 2
+        leaves_qty: 13
+        cumulative_qty: 2
 
   # Trade fills the resting remainder of BID_2
   - type: trade
     side: Ask
     price: 102
-    size: 10
+    size: 13
     expected_reports:
       - exec_type: FILL
         order_status: FILLED
         client_oid: BID_2
-        filled_qty: 5
+        filled_qty: 13
         leaves_qty: 0
+        cumulative_qty: 15
 
   # ============================================================
   # ASK SIDE — aggressive limit sell
@@ -86,7 +88,7 @@ events:
         leaves_qty: 0
         cumulative_qty: 6
 
-  # Partial cross: size 15 > bid depth 10 → NEW + PARTIAL_FILL; remainder 5 rests
+  # Partial cross: ASK_1 took 6 of the 10, so only 4 are left → NEW + PARTIAL_FILL; remainder 11 rests
   - type: submit_order
     order:
       side: Ask
@@ -103,18 +105,19 @@ events:
       - exec_type: PARTIAL_FILL
         order_status: PARTIALLY_FILLED
         client_oid: ASK_2
-        filled_qty: 10
-        leaves_qty: 5
-        cumulative_qty: 10
+        filled_qty: 4
+        leaves_qty: 11
+        cumulative_qty: 4
 
   # Trade fills the resting remainder of ASK_2
   - type: trade
     side: Bid
     price: 98
-    size: 10
+    size: 11
     expected_reports:
       - exec_type: FILL
         order_status: FILLED
         client_oid: ASK_2
-        filled_qty: 5
+        filled_qty: 11
         leaves_qty: 0
+        cumulative_qty: 15

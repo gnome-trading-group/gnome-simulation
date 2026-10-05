@@ -11,6 +11,11 @@ import java.util.ArrayDeque;
 public final class OptimisticQueueModel implements QueueModel {
 
     @Override
+    public long consumedAfterCancels(long consumed, long removedVolume, long newQuantity) {
+        return Math.min(Math.max(0, consumed - removedVolume), newQuantity);
+    }
+
+    @Override
     public void onModify(long previousQuantity, long newQuantity, ArrayDeque<LocalOrder> localQueue) {
         if (localQueue.isEmpty()) {
             return;

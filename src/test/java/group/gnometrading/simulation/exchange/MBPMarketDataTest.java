@@ -233,7 +233,7 @@ class MBPMarketDataTest {
 
         // Place a local ask at 102 (phantom = 40 since that's the market depth)
         Order askOrder = makeOrder(102, 8, Side.Ask, 1L, OrderType.LIMIT, TimeInForce.GOOD_TILL_CANCELED);
-        exchange.submitOrder(askOrder);
+        Immediate.submit(exchange, askOrder);
 
         // Trade: buy 50 at 102 (phantom=40, trade=50 → 50-40=10 fills, but order is only 8)
         Mbp10Schema trade = makeTrade(Side.Bid, 102, 50);
@@ -254,8 +254,8 @@ class MBPMarketDataTest {
         final long twentyThousand = 20_000_000_000L;
         final long tenThousand = 10_000_000_000L;
         exchange.onMarketData(makeSingleLevelUpdate(100, twentyThousand, 102, twentyThousand));
-        exchange.submitOrder(
-                makeOrder(102, tenThousand, Side.Ask, 1L, OrderType.LIMIT, TimeInForce.GOOD_TILL_CANCELED));
+        Immediate.submit(
+                exchange, makeOrder(102, tenThousand, Side.Ask, 1L, OrderType.LIMIT, TimeInForce.GOOD_TILL_CANCELED));
 
         // The 20,000 resting ahead of us fill first; the rest of the 30,000 bought reaches our order.
         List<OrderExecutionReport> reports = exchange.onMarketData(makeTrade(Side.Bid, 102, 30_000_000_000L));
@@ -275,7 +275,7 @@ class MBPMarketDataTest {
 
         // Local ask with phantom = 5 (market depth at 102)
         Order askOrder = makeOrder(102, 20, Side.Ask, 1L, OrderType.LIMIT, TimeInForce.GOOD_TILL_CANCELED);
-        exchange.submitOrder(askOrder);
+        Immediate.submit(exchange, askOrder);
 
         // Trade 8 at 102: phantom=5, trade=8 → fills 3 of our 20 remaining
         Mbp10Schema trade = makeTrade(Side.Bid, 102, 8);
@@ -298,7 +298,7 @@ class MBPMarketDataTest {
 
         // Local bid at 100 with phantom = 10 (market depth at 100)
         Order bidOrder = makeOrder(100, 5, Side.Bid, 1L, OrderType.LIMIT, TimeInForce.GOOD_TILL_CANCELED);
-        exchange.submitOrder(bidOrder);
+        Immediate.submit(exchange, bidOrder);
 
         // Sell trade at 100: phantom=10, trade=20 → fills 5 of our bid
         Mbp10Schema trade = makeTrade(Side.Ask, 100, 20);
@@ -316,7 +316,7 @@ class MBPMarketDataTest {
         exchange.onMarketData(update);
 
         Order askOrder = makeOrder(102 * P, 10 * S, Side.Ask, 1L, OrderType.LIMIT, TimeInForce.GOOD_TILL_CANCELED);
-        exchange.submitOrder(askOrder);
+        Immediate.submit(exchange, askOrder);
 
         // Trade fills ASK_1: price=102, qty=10. Maker fee = 3% = $30.6
         Mbp10Schema trade = makeTrade(Side.Bid, 102 * P, 15 * S);
@@ -360,7 +360,7 @@ class MBPMarketDataTest {
 
         // Confirm book was seeded: a GTC bid below the ask should be placed (no cross)
         Order bid = makeOrder(100, 5, Side.Bid, 1L, OrderType.LIMIT, TimeInForce.GOOD_TILL_CANCELED);
-        List<OrderExecutionReport> submitReports = exchange.submitOrder(bid);
+        List<OrderExecutionReport> submitReports = Immediate.submit(exchange, bid);
         assertEquals(1, submitReports.size());
         assertEquals(ExecType.NEW, submitReports.get(0).decoder.execType());
     }
@@ -372,7 +372,7 @@ class MBPMarketDataTest {
 
         // Place local ask at 102 (phantom=5)
         Order ask = makeOrder(102, 10, Side.Ask, 1L, OrderType.LIMIT, TimeInForce.GOOD_TILL_CANCELED);
-        exchange.submitOrder(ask);
+        Immediate.submit(exchange, ask);
 
         // Trade via MBP1: trade=15, phantom=5, fill=10
         List<OrderExecutionReport> reports = exchange.onMarketData(makeMbp1Trade(Side.Bid, 102, 15));
@@ -397,8 +397,8 @@ class MBPMarketDataTest {
         // Place two local asks at 102; each gets phantom=2
         Order ask1 = makeOrder(102, 5, Side.Ask, 1L, OrderType.LIMIT, TimeInForce.GOOD_TILL_CANCELED);
         Order ask2 = makeOrder(102, 3, Side.Ask, 2L, OrderType.LIMIT, TimeInForce.GOOD_TILL_CANCELED);
-        exchange.submitOrder(ask1);
-        exchange.submitOrder(ask2);
+        Immediate.submit(exchange, ask1);
+        Immediate.submit(exchange, ask2);
 
         // Trade 15 at 102: phantom=2, remainingVol=13, fills ask1(5) then ask2(3)
         List<OrderExecutionReport> reports = exchange.onMarketData(makeTrade(Side.Bid, 102, 15));
@@ -418,7 +418,7 @@ class MBPMarketDataTest {
     void testMultiLevelFillProducesPartialThenFull() {
         // Submit local bid at 103 before any market data — no matches, rests on book
         Order bid = makeOrder(103, 8, Side.Bid, 1L, OrderType.LIMIT, TimeInForce.GOOD_TILL_CANCELED);
-        exchange.submitOrder(bid);
+        Immediate.submit(exchange, bid);
 
         // Market update: ask@101/5 and ask@102/10 cross our local bid at 103.
         // checkBidFills iterates ask levels in order: 5 units from ask@101 → PARTIAL_FILL,
@@ -446,7 +446,7 @@ class MBPMarketDataTest {
     @Test
     void testMultiLevelFillCumulativeQtyIsCorrect() {
         Order bid = makeOrder(103, 8, Side.Bid, 1L, OrderType.LIMIT, TimeInForce.GOOD_TILL_CANCELED);
-        exchange.submitOrder(bid);
+        Immediate.submit(exchange, bid);
 
         List<OrderExecutionReport> reports =
                 exchange.onMarketData(makeMarketUpdate(Action.Add, 100, 50, 101, 5, PRICE_NULL, -1, 102, 10));
@@ -460,7 +460,7 @@ class MBPMarketDataTest {
     void testSingleLevelFullFillIsExecTypeFill() {
         // Regression: single-level fill should still produce ExecType.FILL (not PARTIAL_FILL)
         Order bid = makeOrder(103, 5, Side.Bid, 1L, OrderType.LIMIT, TimeInForce.GOOD_TILL_CANCELED);
-        exchange.submitOrder(bid);
+        Immediate.submit(exchange, bid);
 
         List<OrderExecutionReport> reports = exchange.onMarketData(makeSingleLevelUpdate(100, 50, 101, 20));
 
@@ -475,7 +475,7 @@ class MBPMarketDataTest {
     void testMarketUpdateWithCrossedBookProducesFills() {
         // Place local ask at 100 (new level, phantom=0)
         Order ask = makeOrder(100, 8, Side.Ask, 1L, OrderType.LIMIT, TimeInForce.GOOD_TILL_CANCELED);
-        exchange.submitOrder(ask);
+        Immediate.submit(exchange, ask);
 
         // Market update: bid=100/50, ask=100/30 — bid and ask at same price → crossed
         // checkAskFills: ask at 100, bid at 100/50 ≥ ask price 100, tradeSize=min(8,50)=8

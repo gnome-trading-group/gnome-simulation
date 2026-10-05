@@ -45,7 +45,12 @@ public final class MbpBook {
      * Reconciles the book against the provided MBP levels, adjusting phantom volumes via the queue model.
      * Returns fills if any local orders were crossed after the update.
      */
-    public List<LocalOrderFill> onMarketUpdate(List<BidAskLevel> levels) {
+    /**
+     * Reconciles the book against a snapshot that shows up to {@code depth} levels per side. A side showing fewer
+     * than {@code depth} levels is the whole side; otherwise prices beyond its worst shown level are out of view, and
+     * our orders resting there keep their queue position until the level is shown again.
+     */
+    public List<LocalOrderFill> onMarketUpdate(List<BidAskLevel> levels, int depth) {
         Map<Long, Long> currBids = new HashMap<>();
         Map<Long, Long> currAsks = new HashMap<>();
         for (BidAskLevel level : levels) {
@@ -57,8 +62,8 @@ public final class MbpBook {
             }
         }
 
-        reconcileSide(bids, currBids);
-        reconcileSide(asks, currAsks);
+        reconcileSide(bids, currBids, true, depth);
+        reconcileSide(asks, currAsks, false, depth);
 
         if (localBidOrders.isEmpty() && localAskOrders.isEmpty()) {
             return Collections.emptyList();
@@ -96,16 +101,17 @@ public final class MbpBook {
                     break;
                 }
                 OrderBookLevel askLevel = asks.get(askPrice);
-                if (askLevel == null || askLevel.size == 0) {
+                if (askLevel == null || askLevel.available() == 0) {
                     continue;
                 }
-                long tradeSize = Math.min(remainingToFill, askLevel.size);
+                long tradeSize = Math.min(remainingToFill, askLevel.available());
                 List<LocalOrderFill> fills = queueModel.onTrade(tradeSize, bidLevel.localOrders);
                 allFills.addAll(fills);
                 long filledQty =
                         fills.stream().mapToLong(LocalOrderFill::fillSize).sum();
                 remainingToFill -= filledQty;
-                askLevel.size -= filledQty;
+                // The next snapshot will still show this liquidity; consuming it keeps it from filling us twice.
+                askLevel.take(filledQty);
             }
         }
     }
@@ -127,16 +133,16 @@ public final class MbpBook {
                     break;
                 }
                 OrderBookLevel bidLevel = bids.get(bidPrice);
-                if (bidLevel == null || bidLevel.size == 0) {
+                if (bidLevel == null || bidLevel.available() == 0) {
                     continue;
                 }
-                long tradeSize = Math.min(remainingToFill, bidLevel.size);
+                long tradeSize = Math.min(remainingToFill, bidLevel.available());
                 List<LocalOrderFill> fills = queueModel.onTrade(tradeSize, askLevel.localOrders);
                 allFills.addAll(fills);
                 long filledQty =
                         fills.stream().mapToLong(LocalOrderFill::fillSize).sum();
                 remainingToFill -= filledQty;
-                bidLevel.size -= filledQty;
+                bidLevel.take(filledQty);
             }
         }
     }
@@ -151,10 +157,8 @@ public final class MbpBook {
      * Processes a trade from the market feed, filling local orders on the opposite side.
      */
     public List<LocalOrderFill> onTrade(long price, long size, Side tradeSide) {
-        if (localBidOrders.isEmpty() && localAskOrders.isEmpty()) {
-            return Collections.emptyList();
-        }
-
+        // Runs even with no local orders: the trade takes market volume off each level it reaches, which is what lets a
+        // later snapshot's shrink be read as cancels.
         // The trade side is the aggressor side; our local orders are on the opposite side
         boolean tradeIsBid = tradeSide == Side.Bid;
         TreeMap<Long, OrderBookLevel> oppBook = tradeIsBid ? asks : bids;
@@ -186,6 +190,8 @@ public final class MbpBook {
             long leftToConsume = Math.min(remainingSize, level.size);
             remainingSize -= leftToConsume;
             level.size -= leftToConsume;
+            // What we took can't outlast the level: once the market has swept it, nothing of it is left to block.
+            level.consumed = Math.min(level.consumed, level.size);
         }
 
         clearFills(allFills);
@@ -212,7 +218,7 @@ public final class MbpBook {
             book.put(price, level);
         }
 
-        LocalOrder localOrder = new LocalOrder(order, remaining, level.size);
+        LocalOrder localOrder = new LocalOrder(order, remaining, level.queueOnJoin());
         localOrders.put(clientOid, localOrder);
         level.localOrders.addLast(localOrder);
     }
@@ -247,11 +253,6 @@ public final class MbpBook {
         return true;
     }
 
-    /**
-     * Modifies a local order's price and/or size. If price changes, the order moves to a new
-     * level and loses queue position. If only size changes, it stays in place.
-     * Returns true if the order was found and modified.
-     */
     /** The live local order for {@code clientOid}, on either side, or null if there is none. */
     public LocalOrder findLocalOrder(long clientOid) {
         LocalOrder localOrder = localBidOrders.get(clientOid);
@@ -270,84 +271,132 @@ public final class MbpBook {
         if (localOrder == null) {
             return false;
         }
-        Side side = localBidOrders.containsKey(clientOid) ? Side.Bid : Side.Ask;
-
-        TreeMap<Long, OrderBookLevel> book = side == Side.Bid ? bids : asks;
-        long oldPrice = localOrder.order.decoder.price();
+        TreeMap<Long, OrderBookLevel> book = localBidOrders.containsKey(clientOid) ? bids : asks;
         long filledQty = localOrder.order.decoder.size() - localOrder.remaining;
         long newRemaining = newOrderQty - filledQty;
         if (newRemaining <= 0) {
             return false;
         }
 
-        if (oldPrice != newPrice) {
-            // Price changed — remove from old level, add to new level (loses queue position)
-            OrderBookLevel oldLevel = book.get(oldPrice);
-            if (oldLevel != null) {
-                oldLevel.localOrders.remove(localOrder);
-                if (oldLevel.size == 0 && !oldLevel.hasLocalOrders()) {
-                    book.remove(oldPrice);
-                }
-            }
-
-            // Update order fields by re-encoding into the existing SBE buffer
-            localOrder.order.encoder.price(newPrice).size(newOrderQty);
-            localOrder.remaining = newRemaining;
-
-            // Add to new price level
-            OrderBookLevel newLevel = book.get(newPrice);
-            if (newLevel == null) {
-                newLevel = new OrderBookLevel(newPrice, 0);
-                book.put(newPrice, newLevel);
-            }
-            localOrder.phantomVolume = newLevel.size;
-            newLevel.localOrders.addLast(localOrder);
+        if (localOrder.order.decoder.price() != newPrice) {
+            moveToPrice(book, localOrder, newPrice, newOrderQty, newRemaining);
         } else {
-            // Only size changed — update in place, keep queue position
-            localOrder.order.encoder.size(newOrderQty);
-            localOrder.remaining = newRemaining;
+            resize(book, localOrder, newOrderQty, newRemaining);
         }
-
         return true;
     }
 
+    /** A price change loses queue position: the order joins the back of its new level. */
+    private static void moveToPrice(
+            TreeMap<Long, OrderBookLevel> book,
+            LocalOrder localOrder,
+            long newPrice,
+            long newOrderQty,
+            long newRemaining) {
+        long oldPrice = localOrder.order.decoder.price();
+        OrderBookLevel oldLevel = book.get(oldPrice);
+        if (oldLevel != null) {
+            oldLevel.localOrders.remove(localOrder);
+            if (oldLevel.size == 0 && !oldLevel.hasLocalOrders()) {
+                book.remove(oldPrice);
+            }
+        }
+
+        localOrder.order.encoder.price(newPrice).size(newOrderQty);
+        localOrder.remaining = newRemaining;
+
+        OrderBookLevel newLevel = book.computeIfAbsent(newPrice, price -> new OrderBookLevel(price, 0));
+        localOrder.phantomVolume = newLevel.queueOnJoin();
+        newLevel.localOrders.addLast(localOrder);
+    }
+
+    /** A size decrease keeps its place in the queue; an increase loses priority and rejoins at the back. */
+    private static void resize(
+            TreeMap<Long, OrderBookLevel> book, LocalOrder localOrder, long newOrderQty, long newRemaining) {
+        boolean increase = newRemaining > localOrder.remaining;
+        localOrder.order.encoder.size(newOrderQty);
+        localOrder.remaining = newRemaining;
+        if (increase) {
+            OrderBookLevel level = book.get(localOrder.order.decoder.price());
+            level.localOrders.remove(localOrder);
+            localOrder.phantomVolume = level.queueOnJoin();
+            level.localOrders.addLast(localOrder);
+        }
+    }
+
+    public MatchPlan planMatches(Order order, SelfTradePrevention selfTradePrevention) {
+        return planMatches(
+                order.decoder.side(),
+                order.decoder.orderType(),
+                order.decoder.price(),
+                order.decoder.size(),
+                selfTradePrevention);
+    }
+
     /**
-     * Returns immediate matches for the order by walking the opposite side of the book.
-     * Skips levels with local orders to avoid self-fills.
+     * Walks the opposite side of the book for {@code quantity} at {@code orderPrice}, without changing anything.
+     *
+     * <p>At a level holding our own resting orders, the incoming order first takes the market volume queued ahead of
+     * each of them. If it still has quantity left it has reached our own order, and the self-trade rule decides:
+     * stop there, or cancel that resting order and carry on through the level.
      */
-    public List<OrderMatch> getMatchingOrders(Order order) {
+    public MatchPlan planMatches(
+            Side side, OrderType orderType, long orderPrice, long quantity, SelfTradePrevention selfTradePrevention) {
         List<OrderMatch> matches = new ArrayList<>();
-        long remainingSize = order.decoder.size();
-        long orderPrice = order.decoder.price();
-        OrderType orderType = order.decoder.orderType();
-        boolean isBuy = order.decoder.side() == Side.Bid;
+        List<LocalOrder> restingToCancel = new ArrayList<>();
+        long remaining = quantity;
+        boolean isBuy = side == Side.Bid;
         TreeMap<Long, OrderBookLevel> oppBook = isBuy ? asks : bids;
 
         for (Map.Entry<Long, OrderBookLevel> entry : oppBook.entrySet()) {
-            if (remainingSize == 0) {
+            if (remaining == 0) {
                 break;
             }
             long levelPrice = entry.getKey();
-            if (orderType == OrderType.LIMIT) {
-                if (isBuy ? levelPrice > orderPrice : levelPrice < orderPrice) {
+            if (orderType == OrderType.LIMIT && (isBuy ? levelPrice > orderPrice : levelPrice < orderPrice)) {
+                break;
+            }
+            OrderBookLevel level = entry.getValue();
+            long available = level.available();
+            long taken = 0;
+            for (LocalOrder own : level.localOrders) {
+                long ahead = Math.max(0, Math.min(own.phantomVolume, available) - taken);
+                long take = Math.min(remaining, ahead);
+                taken += take;
+                remaining -= take;
+                if (remaining == 0) {
                     break;
                 }
+                if (selfTradePrevention == SelfTradePrevention.CANCEL_INCOMING) {
+                    addMatch(matches, levelPrice, taken);
+                    return new MatchPlan(matches, restingToCancel, true);
+                }
+                restingToCancel.add(own);
             }
-
-            OrderBookLevel level = entry.getValue();
-            if (level.size == 0) {
-                continue;
-            }
-            if (level.hasLocalOrders()) {
-                return Collections.emptyList();
-            }
-
-            long matchSize = Math.min(remainingSize, level.size);
-            remainingSize -= matchSize;
-            matches.add(new OrderMatch(levelPrice, matchSize));
+            long take = Math.min(remaining, available - taken);
+            taken += take;
+            remaining -= take;
+            addMatch(matches, levelPrice, taken);
         }
 
-        return matches;
+        return new MatchPlan(matches, restingToCancel, false);
+    }
+
+    /** Records liquidity an incoming order on {@code takerSide} has taken, so it is not offered again. */
+    public void consume(Side takerSide, List<OrderMatch> matches) {
+        TreeMap<Long, OrderBookLevel> oppBook = takerSide == Side.Bid ? asks : bids;
+        for (OrderMatch match : matches) {
+            OrderBookLevel level = oppBook.get(match.price());
+            if (level != null) {
+                level.take(match.size());
+            }
+        }
+    }
+
+    private static void addMatch(List<OrderMatch> matches, long price, long size) {
+        if (size > 0) {
+            matches.add(new OrderMatch(price, size));
+        }
     }
 
     // --- Package-visible accessors for tests ---
@@ -368,7 +417,9 @@ public final class MbpBook {
         return localAskOrders;
     }
 
-    private void reconcileSide(TreeMap<Long, OrderBookLevel> book, Map<Long, Long> curr) {
+    private void reconcileSide(TreeMap<Long, OrderBookLevel> book, Map<Long, Long> curr, boolean isBid, int depth) {
+        // The worst shown price bounds what the snapshot could show; null when it shows the whole side.
+        Long worstShown = curr.size() < depth ? null : worstPrice(curr, isBid);
         Set<Long> allPrices = new HashSet<>(book.keySet());
         allPrices.addAll(curr.keySet());
 
@@ -376,26 +427,54 @@ public final class MbpBook {
             if (price == PRICE_NULL) {
                 continue;
             }
-            OrderBookLevel prevLevel = book.get(price);
-            long prevSize = prevLevel != null ? prevLevel.size : 0;
-            long newSize = curr.getOrDefault(price, 0L);
-
-            if (newSize == 0) {
-                if (prevLevel == null || !prevLevel.hasLocalOrders()) {
-                    book.remove(price);
-                    continue;
-                }
-                // Keep the level alive since we have local orders there
+            boolean outOfView = worstShown != null && (isBid ? price < worstShown : price > worstShown);
+            if (outOfView) {
+                dropIfNoLocalOrders(book, price);
+            } else {
+                reconcileLevel(book, price, curr.getOrDefault(price, 0L));
             }
-
-            if (prevLevel == null) {
-                prevLevel = new OrderBookLevel(price, 0);
-                book.put(price, prevLevel);
-            }
-
-            queueModel.onModify(prevSize, newSize, prevLevel.localOrders);
-            prevLevel.size = newSize;
         }
+    }
+
+    private static long worstPrice(Map<Long, Long> curr, boolean isBid) {
+        return isBid ? Collections.min(curr.keySet()) : Collections.max(curr.keySet());
+    }
+
+    /**
+     * An out-of-view level holding our orders keeps its last known size and their queue position; a stale market
+     * level is dropped rather than offered to aggressive orders.
+     */
+    private static void dropIfNoLocalOrders(TreeMap<Long, OrderBookLevel> book, long price) {
+        OrderBookLevel level = book.get(price);
+        if (level == null) {
+            return;
+        }
+        if (level.hasLocalOrders()) {
+            level.outOfView = true;
+        } else {
+            book.remove(price);
+        }
+    }
+
+    private void reconcileLevel(TreeMap<Long, OrderBookLevel> book, long price, long newSize) {
+        OrderBookLevel prevLevel = book.get(price);
+        if (newSize == 0 && (prevLevel == null || !prevLevel.hasLocalOrders())) {
+            book.remove(price);
+            return;
+        }
+        long prevSize = prevLevel != null ? prevLevel.size : 0;
+        if (prevLevel == null) {
+            prevLevel = new OrderBookLevel(price, 0);
+            book.put(price, prevLevel);
+        }
+        prevLevel.outOfView = false;
+        queueModel.onModify(prevSize, newSize, prevLevel.localOrders);
+        if (prevLevel.consumed > 0) {
+            // Trades were already taken off size in onTrade, so a shrink seen here is cancels.
+            prevLevel.consumed =
+                    queueModel.consumedAfterCancels(prevLevel.consumed, Math.max(0, prevSize - newSize), newSize);
+        }
+        prevLevel.size = newSize;
     }
 
     private void clearFills(List<LocalOrderFill> fills) {

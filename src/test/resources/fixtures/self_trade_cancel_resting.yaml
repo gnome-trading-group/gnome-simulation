@@ -1,0 +1,59 @@
+name: self_trade_cancel_resting
+description: >-
+  Self-trade prevention, cancel-resting (Kalshi maker, which our Kalshi gateway sends). When an incoming order
+  would reach our own resting order, the resting order is cancelled and matching carries on.
+self_trade_prevention: CANCEL_RESTING
+initial_levels:
+  - ask_px: 102
+    ask_sz: 10
+  - ask_px: 103
+    ask_sz: 10
+
+events:
+
+  - type: submit_order
+    order:
+      side: Ask
+      price: 102
+      size: 5
+      client_oid: ASK_1
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: ASK_1
+        leaves_qty: 5
+
+  # Buy 15 at 102: takes the 10 ahead of ASK_1, cancels ASK_1, finds nothing more at 102 and rests the rest.
+  - type: submit_order
+    order:
+      side: Bid
+      price: 102
+      size: 15
+      client_oid: BID_1
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: CANCEL
+        order_status: CANCELED
+        client_oid: ASK_1
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_1
+        leaves_qty: 15
+      - exec_type: PARTIAL_FILL
+        order_status: PARTIALLY_FILLED
+        client_oid: BID_1
+        filled_qty: 10
+        fill_price: 102
+        liquidity: TAKER
+        leaves_qty: 5
+        cumulative_qty: 10
+
+  # ASK_1 is gone.
+  - type: cancel_order
+    client_oid: ASK_1
+    expected_reports:
+      - exec_type: CANCEL_REJECT
+        client_oid: ASK_1

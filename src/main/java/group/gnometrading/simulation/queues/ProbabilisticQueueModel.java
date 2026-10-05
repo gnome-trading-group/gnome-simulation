@@ -20,6 +20,12 @@ public final class ProbabilisticQueueModel implements QueueModel {
     }
 
     @Override
+    public long consumedAfterCancels(long consumed, long removedVolume, long newQuantity) {
+        long fromFront = Math.round(cancelAheadProbability * removedVolume);
+        return Math.min(Math.max(0, consumed - fromFront), newQuantity);
+    }
+
+    @Override
     public void onModify(long previousQuantity, long newQuantity, ArrayDeque<LocalOrder> localQueue) {
         if (localQueue.isEmpty()) {
             return;
@@ -29,11 +35,9 @@ public final class ProbabilisticQueueModel implements QueueModel {
             return;
         }
         long expectedAhead = Math.round(cancelAheadProbability * removedVolume);
-        if (expectedAhead <= 0) {
-            return;
-        }
         for (LocalOrder localOrder : localQueue) {
-            localOrder.phantomVolume = Math.max(0, localOrder.phantomVolume - expectedAhead);
+            // Never more volume ahead of us than the level now holds.
+            localOrder.phantomVolume = Math.min(newQuantity, Math.max(0, localOrder.phantomVolume - expectedAhead));
         }
     }
 }

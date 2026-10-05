@@ -2,6 +2,7 @@ package group.gnometrading.simulation.config;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import group.gnometrading.simulation.book.SelfTradePrevention;
 import group.gnometrading.simulation.latency.LatencyModel;
 import group.gnometrading.simulation.latency.LatencySeeds;
 import java.util.Arrays;
@@ -165,6 +166,14 @@ class ExchangeProfileConfigTest {
         assertInstanceOf(LatencyConfig.Static.class, profile.networkLatency);
         assertInstanceOf(LatencyConfig.Static.class, profile.orderProcessingLatency);
         assertInstanceOf(QueueModelConfig.RiskAverse.class, profile.queueModel);
+        assertEquals(SelfTradePrevention.CANCEL_INCOMING, profile.selfTradePrevention);
+    }
+
+    @Test
+    void exchangeProfile_selfTradePreventionFromMap() {
+        ExchangeProfileConfig profile =
+                ExchangeProfileConfig.fromMap(Map.of("self.trade.prevention", "CANCEL_RESTING"));
+        assertEquals(SelfTradePrevention.CANCEL_RESTING, profile.selfTradePrevention);
     }
 
     @Test

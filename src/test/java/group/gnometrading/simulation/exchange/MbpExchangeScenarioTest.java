@@ -9,6 +9,7 @@ import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import group.gnometrading.schemas.Action;
 import group.gnometrading.schemas.CancelOrder;
 import group.gnometrading.schemas.ExecType;
+import group.gnometrading.schemas.Liquidity;
 import group.gnometrading.schemas.Mbp10Decoder;
 import group.gnometrading.schemas.Mbp10Schema;
 import group.gnometrading.schemas.ModifyOrder;
@@ -18,6 +19,7 @@ import group.gnometrading.schemas.OrderStatus;
 import group.gnometrading.schemas.OrderType;
 import group.gnometrading.schemas.Side;
 import group.gnometrading.schemas.TimeInForce;
+import group.gnometrading.simulation.book.SelfTradePrevention;
 import group.gnometrading.simulation.fee.FeeModel;
 import group.gnometrading.simulation.latency.LatencyModel;
 import group.gnometrading.simulation.queues.QueueModel;
@@ -56,6 +58,9 @@ class MbpExchangeScenarioTest {
 
         @JsonProperty("initial_levels")
         public List<Level> initialLevels;
+
+        @JsonProperty("self_trade_prevention")
+        public String selfTradePrevention = "CANCEL_INCOMING";
 
         public List<Event> events;
     }
@@ -132,6 +137,11 @@ class MbpExchangeScenarioTest {
 
         @JsonProperty("cumulative_qty")
         public Long cumulativeQty;
+
+        @JsonProperty("fill_price")
+        public Long fillPrice;
+
+        public String liquidity;
     }
 
     // --- Exchange stubs ---
@@ -180,7 +190,11 @@ class MbpExchangeScenarioTest {
     @MethodSource("loadScenarios")
     void testScenario(String name, Scenario scenario) {
         MbpSimulatedExchange exchange = new MbpSimulatedExchange(
-                new ZeroFeeModel(), new ZeroLatency(), new ZeroLatency(), new DummyQueueModel());
+                new ZeroFeeModel(),
+                new ZeroLatency(),
+                new ZeroLatency(),
+                new DummyQueueModel(),
+                SelfTradePrevention.valueOf(scenario.selfTradePrevention));
 
         Map<String, Long> oidMap = new HashMap<>();
         long[] nextOid = {1L};
@@ -189,22 +203,23 @@ class MbpExchangeScenarioTest {
             exchange.onMarketData(buildMarketUpdate(scenario.initialLevels));
         }
 
-        for (Event event : scenario.events) {
+        for (int eventIndex = 0; eventIndex < scenario.events.size(); eventIndex++) {
+            Event event = scenario.events.get(eventIndex);
             List<OrderExecutionReport> reports =
                     switch (event.type) {
                         case "submit_order" -> {
                             long oid = oidMap.computeIfAbsent(event.order.clientOid, k -> nextOid[0]++);
-                            yield exchange.submitOrder(buildOrder(event.order, oid));
+                            yield Immediate.submit(exchange, buildOrder(event.order, oid));
                         }
                         case "trade" -> exchange.onMarketData(
                                 buildTrade(parseSide(event.side), event.price, event.size));
                         case "cancel_order" -> {
                             long oid = oidMap.computeIfAbsent(event.clientOid, k -> nextOid[0]++);
-                            yield exchange.cancelOrder(buildCancel(oid));
+                            yield Immediate.cancel(exchange, buildCancel(oid));
                         }
                         case "modify_order" -> {
                             long oid = oidMap.computeIfAbsent(event.clientOid, k -> nextOid[0]++);
-                            yield exchange.modifyOrder(buildModify(oid, event.newPrice, event.newSize));
+                            yield Immediate.modify(exchange, buildModify(oid, event.newPrice, event.newSize));
                         }
                         case "market_update" -> exchange.onMarketData(buildMarketUpdate(event.levels));
                         default -> throw new IllegalArgumentException("Unknown event type: " + event.type);
@@ -219,7 +234,8 @@ class MbpExchangeScenarioTest {
             for (int i = 0; i < expected.size(); i++) {
                 ExpectedReport exp = expected.get(i);
                 OrderExecutionReport rep = reports.get(i);
-                String ctx = "report[" + i + "] in event type=" + event.type + " in scenario=" + name;
+                String ctx =
+                        "report[" + i + "] in event #" + eventIndex + " type=" + event.type + " in scenario=" + name;
 
                 if (exp.execType != null) {
                     assertEquals(ExecType.valueOf(exp.execType), rep.decoder.execType(), "execType mismatch: " + ctx);
@@ -243,6 +259,13 @@ class MbpExchangeScenarioTest {
                 if (exp.cumulativeQty != null) {
                     assertEquals(
                             (long) exp.cumulativeQty, rep.decoder.cumulativeQty(), "cumulativeQty mismatch: " + ctx);
+                }
+                if (exp.fillPrice != null) {
+                    assertEquals((long) exp.fillPrice, rep.decoder.fillPrice(), "fillPrice mismatch: " + ctx);
+                }
+                if (exp.liquidity != null) {
+                    assertEquals(
+                            Liquidity.valueOf(exp.liquidity), rep.decoder.liquidity(), "liquidity mismatch: " + ctx);
                 }
             }
         }

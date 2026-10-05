@@ -1,0 +1,51 @@
+name: consumed_liquidity
+description: >-
+  The replayed feed never shows our trades. Liquidity we take stays taken when the next snapshot repeats
+  the same book, so a resting remainder is not filled a second time against it. New liquidity added to the
+  level is available.
+initial_levels:
+  - ask_px: 102
+    ask_sz: 10
+
+events:
+
+  # Takes all 10 at 102; the remaining 5 rests at 102.
+  - type: submit_order
+    order:
+      side: Bid
+      price: 102
+      size: 15
+      client_oid: BID_1
+      order_type: LIMIT
+      tif: GTC
+    expected_reports:
+      - exec_type: NEW
+        order_status: NEW
+        client_oid: BID_1
+        leaves_qty: 15
+      - exec_type: PARTIAL_FILL
+        order_status: PARTIALLY_FILLED
+        client_oid: BID_1
+        filled_qty: 10
+        liquidity: TAKER
+        leaves_qty: 5
+
+  # The same snapshot again: the 10 at 102 were ours already, so nothing fills.
+  - type: market_update
+    levels:
+      - ask_px: 102
+        ask_sz: 10
+    expected_reports: []
+
+  # 3 more join 102: only those are new, and they fill our resting bid as a maker.
+  - type: market_update
+    levels:
+      - ask_px: 102
+        ask_sz: 13
+    expected_reports:
+      - exec_type: PARTIAL_FILL
+        order_status: PARTIALLY_FILLED
+        client_oid: BID_1
+        filled_qty: 3
+        liquidity: MAKER
+        leaves_qty: 2
