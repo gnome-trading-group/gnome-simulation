@@ -550,6 +550,21 @@ class MBPSubmitTest {
     }
 
     @Test
+    void testCancelReportsWhatTheOrderHadFilled() {
+        // Resting ask 102 x 10 behind 5 of displayed depth; an 8-lot trade fills 3 of ours
+        exchange.onMarketData(makeSingleLevelUpdate(100 * P, 50 * S, 102 * P, 5 * S));
+        Immediate.submit(
+                exchange, makeOrder(102 * P, 10 * S, Side.Ask, 1L, OrderType.LIMIT, TimeInForce.GOOD_TILL_CANCELED));
+        exchange.onMarketData(makeTrade(Side.Bid, 102 * P, 8 * S));
+
+        List<OrderExecutionReport> reports = Immediate.cancel(exchange, makeCancel(1, 1, 1L));
+
+        assertEquals(ExecType.CANCEL, reports.get(0).decoder.execType());
+        assertEquals(3 * S, reports.get(0).decoder.cumulativeQty());
+        assertEquals(0, reports.get(0).decoder.leavesQty());
+    }
+
+    @Test
     void testModifyToAtOrBelowFilled_IsCancelRejected() {
         exchange.onMarketData(makeSingleLevelUpdate(100 * P, 50 * S, 102 * P, 5 * S));
         Immediate.submit(

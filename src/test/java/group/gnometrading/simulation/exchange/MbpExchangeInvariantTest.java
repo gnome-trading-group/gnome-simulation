@@ -470,7 +470,13 @@ class MbpExchangeInvariantTest {
                     tracked.qty = leaves + cumulative;
                 }
                 case PARTIAL_FILL, FILL -> checkFill(tracked, oid, report, exec);
-                case CANCEL -> tracked.terminal = true;
+                case CANCEL -> {
+                    if (cumulative != tracked.filled) {
+                        fail(ctx("CANCEL for " + oid + " reports cum " + cumulative + " but it filled "
+                                + tracked.filled));
+                    }
+                    tracked.terminal = true;
+                }
                 case REJECT -> {
                     if (tracked.seenReport || tracked.filled > 0) {
                         fail(ctx("REJECT for " + oid + " after it was already working"));

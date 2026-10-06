@@ -206,10 +206,14 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
 
     private List<OrderExecutionReport> executeCancel(CancelOrder cancel) {
         long clientOid = cancel.getClientOidCounter();
-        if (orderBook.cancelOrder(clientOid)) {
-            return List.of(canceled(cancel));
+        LocalOrder working = orderBook.findLocalOrder(clientOid);
+        if (working == null) {
+            return List.of(cancelRejected(cancel));
         }
-        return List.of(cancelRejected(cancel));
+        // Read before the book lets go of the order: the cancel reports everything it filled, as venues do.
+        long filled = working.order.decoder.size() - working.remaining;
+        orderBook.cancelOrder(clientOid);
+        return List.of(canceled(cancel, filled));
     }
 
     private static Order copy(Order order) {
@@ -643,7 +647,7 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
         return report;
     }
 
-    private OrderExecutionReport canceled(CancelOrder cancel) {
+    private OrderExecutionReport canceled(CancelOrder cancel, long filled) {
         OrderExecutionReport report = makeReport(
                 cancel.getClientOidCounter(),
                 cancel.getClientOidStrategyId(),
@@ -651,7 +655,7 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
                 OrderStatus.CANCELED,
                 0,
                 0,
-                0,
+                filled,
                 0,
                 0);
         report.encoder.exchangeId((short) cancel.decoder.exchangeId()).securityId(cancel.decoder.securityId());
