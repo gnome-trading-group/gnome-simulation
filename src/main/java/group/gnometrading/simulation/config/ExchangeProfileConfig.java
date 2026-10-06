@@ -11,7 +11,13 @@ import java.util.Map;
 public final class ExchangeProfileConfig {
 
     public FeeModelConfig feeModel = new FeeModelConfig.Static();
-    public LatencyConfig networkLatency = new LatencyConfig.Static();
+    /**
+     * When market data reaches the strategy. A backtest setting: paper trading gets live market data as it arrives.
+     */
+    public LatencyConfig marketDataLatency = new LatencyConfig.Recorded();
+    /** Our order connection: orders out and reports back. */
+    public LatencyConfig networkLatency = new LatencyConfig.LogNormal();
+
     public LatencyConfig orderProcessingLatency = new LatencyConfig.Static();
     public QueueModelConfig queueModel = new QueueModelConfig.RiskAverse();
     public SelfTradePrevention selfTradePrevention = SelfTradePrevention.CANCEL_INCOMING;

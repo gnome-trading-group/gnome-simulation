@@ -63,42 +63,61 @@ class ExchangeProfileConfigTest {
     }
 
     @Test
-    void latency_gaussian() {
-        LatencyConfig result = LatencyConfig.fromMap(Map.of("model", "gaussian", "mu", "100.0", "sigma", "10.0"));
-        assertInstanceOf(LatencyConfig.Gaussian.class, result);
-        LatencyConfig.Gaussian g = (LatencyConfig.Gaussian) result;
-        assertEquals(100.0, g.mu);
-        assertEquals(10.0, g.sigma);
+    void latency_lognormal() {
+        LatencyConfig result = LatencyConfig.fromMap(
+                Map.of("model", "lognormal", "floor.nanos", "1000", "median.nanos", "2000", "p99.nanos", "9000"));
+        assertInstanceOf(LatencyConfig.LogNormal.class, result);
+        LatencyConfig.LogNormal cfg = (LatencyConfig.LogNormal) result;
+        assertEquals(1_000L, cfg.floorNanos);
+        assertEquals(2_000L, cfg.medianNanos);
+        assertEquals(9_000L, cfg.p99Nanos);
+        assertNull(cfg.seed);
     }
 
     @Test
-    void latency_gaussianDefaults() {
-        LatencyConfig result = LatencyConfig.fromMap(Map.of("model", "gaussian"));
-        assertInstanceOf(LatencyConfig.Gaussian.class, result);
-        LatencyConfig.Gaussian g = (LatencyConfig.Gaussian) result;
-        assertEquals(0.0, g.mu);
-        assertEquals(0.0, g.sigma);
-        assertNull(g.seed);
+    void latency_unknownModelIsRefused() {
+        assertThrows(IllegalArgumentException.class, () -> LatencyConfig.fromMap(Map.of("model", "gaussian")));
     }
 
     @Test
-    void latency_gaussianExplicitSeed() {
-        LatencyConfig result = LatencyConfig.fromMap(Map.of("model", "gaussian", "seed", "42"));
-        assertEquals(42L, ((LatencyConfig.Gaussian) result).seed);
+    void latency_lognormalDefaults() {
+        LatencyConfig.LogNormal cfg = (LatencyConfig.LogNormal) LatencyConfig.fromMap(Map.of("model", "lognormal"));
+        assertEquals(5_000_000L, cfg.floorNanos);
+        assertEquals(12_000_000L, cfg.medianNanos);
+        assertEquals(200_000_000L, cfg.p99Nanos);
     }
 
     @Test
-    void latency_gaussianExplicitSeedWinsOverDerived() {
-        LatencyConfig.Gaussian cfg = gaussian(1_000_000.0, 100_000.0);
+    void latency_lognormalExplicitSeed() {
+        LatencyConfig result = LatencyConfig.fromMap(Map.of("model", "lognormal", "seed", "42"));
+        assertEquals(42L, ((LatencyConfig.LogNormal) result).seed);
+    }
+
+    @Test
+    void latency_lognormalExplicitSeedWinsOverDerived() {
+        LatencyConfig.LogNormal cfg = new LatencyConfig.LogNormal();
         cfg.seed = 42L;
         assertArrayEquals(draws(cfg.toModel(1L)), draws(cfg.toModel(2L)));
     }
 
     @Test
-    void latency_gaussianDerivedSeedsGiveIndependentDraws() {
-        LatencyConfig.Gaussian cfg = gaussian(1_000_000.0, 100_000.0);
+    void latency_lognormalDerivedSeedsGiveIndependentDraws() {
+        LatencyConfig.LogNormal cfg = new LatencyConfig.LogNormal();
         assertArrayEquals(draws(cfg.toModel(7L)), draws(cfg.toModel(7L)));
         assertFalse(Arrays.equals(draws(cfg.toModel(7L)), draws(cfg.toModel(8L))));
+    }
+
+    @Test
+    void latency_recordedFallsBackToItsModel() {
+        LatencyConfig.Recorded cfg = new LatencyConfig.Recorded();
+        assertEquals(50_000_000L, cfg.toModel(1L).simulate());
+    }
+
+    @Test
+    void profile_defaultsReplayMarketDataAndModelOrders() {
+        ExchangeProfileConfig profile = new ExchangeProfileConfig();
+        assertInstanceOf(LatencyConfig.Recorded.class, profile.marketDataLatency);
+        assertInstanceOf(LatencyConfig.LogNormal.class, profile.networkLatency);
     }
 
     @Test
@@ -183,28 +202,21 @@ class ExchangeProfileConfigTest {
                 "fee.model", "parametric",
                 "fee.taker.rate", "0.07",
                 "fee.maker.rate", "0.0",
-                "network.latency.model", "gaussian",
-                "network.latency.mu", "100.0",
-                "network.latency.sigma", "10.0",
+                "network.latency.model", "lognormal",
+                "network.latency.floor.nanos", "1000",
+                "network.latency.median.nanos", "2000",
                 "order.latency.model", "static",
                 "order.latency.nanos", "5000000",
                 "queue.model", "probabilistic",
                 "queue.cancel.ahead.probability", "0.3");
         ExchangeProfileConfig profile = ExchangeProfileConfig.fromMap(map);
         assertInstanceOf(FeeModelConfig.Parametric.class, profile.feeModel);
-        assertInstanceOf(LatencyConfig.Gaussian.class, profile.networkLatency);
+        assertInstanceOf(LatencyConfig.LogNormal.class, profile.networkLatency);
         assertInstanceOf(LatencyConfig.Static.class, profile.orderProcessingLatency);
         assertInstanceOf(QueueModelConfig.Probabilistic.class, profile.queueModel);
         assertEquals(5_000_000L, ((LatencyConfig.Static) profile.orderProcessingLatency).latencyNanos);
         assertEquals(0.3, ((QueueModelConfig.Probabilistic) profile.queueModel).cancelAheadProbability);
         assertNotNull(profile.toSimulatedExchange(1L));
-    }
-
-    private static LatencyConfig.Gaussian gaussian(double mu, double sigma) {
-        LatencyConfig.Gaussian cfg = new LatencyConfig.Gaussian();
-        cfg.mu = mu;
-        cfg.sigma = sigma;
-        return cfg;
     }
 
     private static long[] draws(LatencyModel model) {

@@ -11,6 +11,7 @@ public final class LatencySeeds {
 
     public static final long NETWORK_STREAM = 1;
     public static final long ORDER_PROCESSING_STREAM = 2;
+    public static final long MARKET_DATA_STREAM = 3;
 
     private LatencySeeds() {}
 

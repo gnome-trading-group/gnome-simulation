@@ -20,8 +20,8 @@ import group.gnometrading.schemas.TimeInForce;
 import group.gnometrading.simulation.book.LocalOrder;
 import group.gnometrading.simulation.book.OrderBookLevel;
 import group.gnometrading.simulation.book.SelfTradePrevention;
-import group.gnometrading.simulation.latency.GaussianLatency;
 import group.gnometrading.simulation.latency.LatencyModel;
+import group.gnometrading.simulation.latency.LogNormalLatency;
 import group.gnometrading.simulation.latency.MakerTakerLatencyModel;
 import group.gnometrading.simulation.latency.StaticLatency;
 import group.gnometrading.simulation.queues.OptimisticQueueModel;
@@ -231,7 +231,7 @@ class MbpExchangeInvariantTest {
             this.takerRate = random.nextDouble() * 0.05;
             // Random processing times let a later message come due before an earlier one.
             LatencyModel processing = random.nextInt(4) == 0
-                    ? new GaussianLatency(1.5, 1.5, seed)
+                    ? new LogNormalLatency(0, 1, 4, seed)
                     : new MakerTakerLatencyModel(0, takerDelay, makerDelay);
             this.exchange = new MbpSimulatedExchange(
                     (price, quantity, isMaker) -> (isMaker ? makerRate : takerRate) * price * quantity,
