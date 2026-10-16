@@ -6,9 +6,8 @@ import group.gnometrading.simulation.latency.LatencyModel;
 import group.gnometrading.simulation.latency.LogNormalLatency;
 import group.gnometrading.simulation.latency.MakerTakerLatencyModel;
 import group.gnometrading.simulation.latency.StaticLatency;
-import java.util.Map;
 
-@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type", defaultImpl = LatencyConfig.Static.class)
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
 @JsonSubTypes({
     @JsonSubTypes.Type(value = LatencyConfig.Static.class, name = "static"),
     @JsonSubTypes.Type(value = LatencyConfig.LogNormal.class, name = "lognormal"),
@@ -22,33 +21,6 @@ public abstract class LatencyConfig {
      * owns the seed so runs are reproducible on its terms.
      */
     public abstract LatencyModel toModel(long seed);
-
-    public static LatencyConfig fromMap(Map<String, String> map) {
-        String model = map.getOrDefault("model", "static");
-        if ("lognormal".equals(model)) {
-            LogNormal cfg = new LogNormal();
-            cfg.floorNanos = Long.parseLong(map.getOrDefault("floor.nanos", String.valueOf(cfg.floorNanos)));
-            cfg.medianNanos = Long.parseLong(map.getOrDefault("median.nanos", String.valueOf(cfg.medianNanos)));
-            cfg.p99Nanos = Long.parseLong(map.getOrDefault("p99.nanos", String.valueOf(cfg.p99Nanos)));
-            String seed = map.get("seed");
-            cfg.seed = seed == null ? null : Long.parseLong(seed);
-            return cfg;
-        }
-        if ("maker_taker".equals(model)) {
-            MakerTaker cfg = new MakerTaker();
-            cfg.baseNanos = Long.parseLong(map.getOrDefault("base.nanos", "0"));
-            cfg.takerDelayNanos = Long.parseLong(map.getOrDefault("taker.delay.nanos", "0"));
-            cfg.makerDelayNanos = Long.parseLong(map.getOrDefault("maker.delay.nanos", "0"));
-            return cfg;
-        }
-        if (!"static".equals(model)) {
-            // Falling back to static would quietly run with no latency at all.
-            throw new IllegalArgumentException("Unknown latency model '" + model + "'");
-        }
-        Static cfg = new Static();
-        cfg.latencyNanos = Long.parseLong(map.getOrDefault("nanos", "0"));
-        return cfg;
-    }
 
     public static final class Static extends LatencyConfig {
         public long latencyNanos;

@@ -7,14 +7,13 @@ import group.gnometrading.simulation.fee.ParametricFeeModel;
 import group.gnometrading.simulation.fee.ScheduledFeeModel;
 import group.gnometrading.simulation.fee.StaticFeeModel;
 import group.gnometrading.sm.fee.FeeTimeline;
-import java.util.Map;
 import java.util.function.IntFunction;
 
 /**
  * How a simulated exchange charges fees. By default each listing pays what its venue charged at the time, from the
  * registry's fee schedules; static and parametric set fixed rates instead, for parameter sweeps.
  */
-@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type", defaultImpl = FeeModelConfig.Registry.class)
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
 @JsonSubTypes({
     @JsonSubTypes.Type(value = FeeModelConfig.Registry.class, name = "registry"),
     @JsonSubTypes.Type(value = FeeModelConfig.Static.class, name = "static"),
@@ -24,26 +23,6 @@ public abstract class FeeModelConfig {
 
     /** The model for one listing; {@code registryFees} looks up a listing's fee timeline when the model needs it. */
     public abstract FeeModel toModel(int listingId, IntFunction<FeeTimeline> registryFees);
-
-    public static FeeModelConfig fromMap(Map<String, String> map) {
-        String model = map.getOrDefault("model", "registry");
-        if ("registry".equals(model)) {
-            return new Registry();
-        }
-        if ("parametric".equals(model)) {
-            Parametric cfg = new Parametric();
-            cfg.takerFeeRate = Double.parseDouble(map.getOrDefault("taker.rate", "0.07"));
-            cfg.makerFeeRate = Double.parseDouble(map.getOrDefault("maker.rate", "0.0"));
-            return cfg;
-        }
-        if (!"static".equals(model)) {
-            throw new IllegalArgumentException("Unknown fee model: " + model);
-        }
-        Static cfg = new Static();
-        cfg.takerFee = Double.parseDouble(map.getOrDefault("taker", "0.0"));
-        cfg.makerFee = Double.parseDouble(map.getOrDefault("maker", "0.0"));
-        return cfg;
-    }
 
     public static final class Registry extends FeeModelConfig {
         @Override
