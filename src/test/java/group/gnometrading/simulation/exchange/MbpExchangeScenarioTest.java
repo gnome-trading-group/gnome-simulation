@@ -23,6 +23,7 @@ import group.gnometrading.simulation.book.SelfTradePrevention;
 import group.gnometrading.simulation.fee.FeeModel;
 import group.gnometrading.simulation.latency.LatencyModel;
 import group.gnometrading.simulation.queues.QueueModel;
+import group.gnometrading.sm.fee.OrderFeeState;
 import java.io.IOException;
 import java.net.URL;
 import java.nio.file.Files;
@@ -153,7 +154,7 @@ class MbpExchangeScenarioTest {
 
     static class ZeroFeeModel implements FeeModel {
         @Override
-        public double calculateFee(long price, long quantity, boolean isMaker) {
+        public long fee(long nowNanos, boolean buy, long price, long quantity, boolean maker, OrderFeeState state) {
             return 0;
         }
     }

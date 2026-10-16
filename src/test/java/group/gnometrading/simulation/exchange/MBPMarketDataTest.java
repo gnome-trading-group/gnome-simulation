@@ -18,6 +18,7 @@ import group.gnometrading.schemas.TimeInForce;
 import group.gnometrading.simulation.fee.FeeModel;
 import group.gnometrading.simulation.latency.LatencyModel;
 import group.gnometrading.simulation.queues.QueueModel;
+import group.gnometrading.sm.fee.OrderFeeState;
 import java.util.ArrayDeque;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -37,9 +38,9 @@ class MBPMarketDataTest {
 
     static class DummyFeeModel implements FeeModel {
         @Override
-        public double calculateFee(long price, long quantity, boolean isMaker) {
+        public long fee(long nowNanos, boolean buy, long price, long quantity, boolean maker, OrderFeeState state) {
             double notional = price * ((double) quantity / Statics.SIZE_SCALING_FACTOR);
-            return notional * (isMaker ? 0.03 : 0.05);
+            return (long) (notional * (maker ? 0.03 : 0.05));
         }
     }
 

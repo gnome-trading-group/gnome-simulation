@@ -77,7 +77,7 @@ class MbpExchangeInvariantTest {
         for (int seed = 0; seed < TRIALS; seed++) {
             Random random = new Random(seed);
             MbpSimulatedExchange exchange = new MbpSimulatedExchange(
-                    (price, quantity, isMaker) -> 0,
+                    (now, buy, price, quantity, maker, state) -> 0,
                     new StaticLatency(0),
                     new StaticLatency(0),
                     random.nextBoolean() ? new OptimisticQueueModel() : new RiskAverseQueueModel());
@@ -156,7 +156,7 @@ class MbpExchangeInvariantTest {
     /** Rests a bid at 100 behind the opening book, replays {@code events}, and returns its cumulative fill after each. */
     private static long[] replay(QueueModel queueModel, List<Schema> events) {
         MbpSimulatedExchange exchange = new MbpSimulatedExchange(
-                (price, quantity, isMaker) -> 0, new StaticLatency(0), new StaticLatency(0), queueModel);
+                (now, buy, price, quantity, maker, state) -> 0, new StaticLatency(0), new StaticLatency(0), queueModel);
         exchange.onMarketData(Trial.mbp10(List.<long[]>of(new long[] {100, 30, 101, 30})));
         Immediate.submit(exchange, makeOrder(100, 60, Side.Bid, 1L, OrderType.LIMIT, TimeInForce.GOOD_TILL_CANCELED));
         long[] filled = new long[events.size()];
@@ -234,7 +234,8 @@ class MbpExchangeInvariantTest {
                     ? new LogNormalLatency(0, 1, 4, seed)
                     : new MakerTakerLatencyModel(0, takerDelay, makerDelay);
             this.exchange = new MbpSimulatedExchange(
-                    (price, quantity, isMaker) -> (isMaker ? makerRate : takerRate) * price * quantity,
+                    (now, buy, price, quantity, maker, state) ->
+                            (long) ((maker ? makerRate : takerRate) * price * quantity),
                     new StaticLatency(0),
                     processing,
                     queueModel,
@@ -527,7 +528,8 @@ class MbpExchangeInvariantTest {
                     }
                     double low = takerRate * price * qty;
                     double high = takerRate * (price + 1) * qty;
-                    if (fee < (long) low - 1 || fee > (long) high + 1) {
+                    // Each match is charged on its own and rounded down, losing under a unit per match.
+                    if (fee < (long) low - qty - 1 || fee > (long) high + 1) {
                         fail(ctx("taker fee " + fee + " for " + qty + " @ avg " + price + " outside [" + low + ", "
                                 + high + "]"));
                     }

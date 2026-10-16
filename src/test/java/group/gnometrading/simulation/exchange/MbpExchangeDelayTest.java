@@ -32,7 +32,7 @@ class MbpExchangeDelayTest {
     @BeforeEach
     void setUp() {
         exchange = new MbpSimulatedExchange(
-                (price, quantity, isMaker) -> 0,
+                (now, buy, price, quantity, maker, state) -> 0,
                 new StaticLatency(0),
                 new MakerTakerLatencyModel(0, TAKER_DELAY, MAKER_DELAY),
                 new RiskAverseQueueModel(),

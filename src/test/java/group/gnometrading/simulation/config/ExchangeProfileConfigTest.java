@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import group.gnometrading.simulation.book.SelfTradePrevention;
 import group.gnometrading.simulation.latency.LatencyModel;
 import group.gnometrading.simulation.latency.LatencySeeds;
+import group.gnometrading.sm.fee.FeeTimeline;
 import java.util.Arrays;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -12,12 +13,14 @@ import org.junit.jupiter.api.Test;
 class ExchangeProfileConfigTest {
 
     @Test
-    void feeModel_defaultsToStaticZero() {
-        FeeModelConfig result = FeeModelConfig.fromMap(Map.of());
-        assertInstanceOf(FeeModelConfig.Static.class, result);
-        FeeModelConfig.Static s = (FeeModelConfig.Static) result;
-        assertEquals(0.0, s.takerFee);
-        assertEquals(0.0, s.makerFee);
+    void feeModel_defaultsToTheRegistry() {
+        assertInstanceOf(FeeModelConfig.Registry.class, FeeModelConfig.fromMap(Map.of()));
+        assertInstanceOf(FeeModelConfig.Registry.class, new ExchangeProfileConfig().feeModel);
+    }
+
+    @Test
+    void feeModel_rejectsAnUnknownModel() {
+        assertThrows(IllegalArgumentException.class, () -> FeeModelConfig.fromMap(Map.of("model", "flat")));
     }
 
     @Test
@@ -181,7 +184,7 @@ class ExchangeProfileConfigTest {
     @Test
     void exchangeProfile_emptyMapUsesDefaults() {
         ExchangeProfileConfig profile = ExchangeProfileConfig.fromMap(Map.of());
-        assertInstanceOf(FeeModelConfig.Static.class, profile.feeModel);
+        assertInstanceOf(FeeModelConfig.Registry.class, profile.feeModel);
         assertInstanceOf(LatencyConfig.Static.class, profile.networkLatency);
         assertInstanceOf(LatencyConfig.Static.class, profile.orderProcessingLatency);
         assertInstanceOf(QueueModelConfig.RiskAverse.class, profile.queueModel);
@@ -216,7 +219,7 @@ class ExchangeProfileConfigTest {
         assertInstanceOf(QueueModelConfig.Probabilistic.class, profile.queueModel);
         assertEquals(5_000_000L, ((LatencyConfig.Static) profile.orderProcessingLatency).latencyNanos);
         assertEquals(0.3, ((QueueModelConfig.Probabilistic) profile.queueModel).cancelAheadProbability);
-        assertNotNull(profile.toSimulatedExchange(1L));
+        assertNotNull(profile.toSimulatedExchange(7, 1L, listingId -> FeeTimeline.EMPTY));
     }
 
     private static long[] draws(LatencyModel model) {

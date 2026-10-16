@@ -27,10 +27,13 @@ import group.gnometrading.simulation.book.SelfTradePrevention;
 import group.gnometrading.simulation.fee.FeeModel;
 import group.gnometrading.simulation.latency.LatencyModel;
 import group.gnometrading.simulation.queues.QueueModel;
+import group.gnometrading.sm.fee.OrderFeeState;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
@@ -53,6 +56,10 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
     private long heldSequence;
     // Client OIDs of orders held inside their delay, which cannot be cancelled or amended yet.
     private final Set<Long> pendingOrders = new HashSet<>();
+    // Each live order's fee rounding carried from fill to fill, by client OID; dropped once the order is done.
+    private final Map<Long, OrderFeeState> feeStates = new HashMap<>();
+    // The simulated time fills are priced at: the market data or the held message being processed.
+    private long nowNanos;
 
     public MbpSimulatedExchange(
             FeeModel feeModel,
@@ -78,8 +85,10 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
     @Override
     public List<OrderExecutionReport> onMarketData(Schema data) {
         if (data instanceof Mbp10Schema mbp10) {
+            advanceTo(mbp10.decoder.timestampEvent());
             return onMbp10(mbp10);
         } else if (data instanceof Mbp1Schema mbp1) {
+            advanceTo(mbp1.decoder.timestampEvent());
             return onMbp1(mbp1);
         }
         throw new IllegalArgumentException("Unsupported schema type: " + data.schemaType);
@@ -161,6 +170,7 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
 
     @Override
     public List<OrderExecutionReport> processDue(long nowNanos) {
+        advanceTo(nowNanos);
         List<OrderExecutionReport> reports = null;
         while (!held.isEmpty() && held.peek().dueNanos() <= nowNanos) {
             List<OrderExecutionReport> processed = process(held.poll().message());
@@ -176,6 +186,14 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
     @Override
     public long nextDueNanos() {
         return held.isEmpty() ? Long.MAX_VALUE : held.peek().dueNanos();
+    }
+
+    private void advanceTo(long timestampNanos) {
+        nowNanos = Math.max(nowNanos, timestampNanos);
+    }
+
+    private OrderFeeState feeState(Order order) {
+        return feeStates.computeIfAbsent(order.getClientOidCounter(), oid -> new OrderFeeState());
     }
 
     private void hold(long dueNanos, Object message) {
@@ -300,7 +318,7 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
         orderBook.consume(order.decoder.side(), plan.matches());
         List<OrderExecutionReport> reports = cancelResting(plan);
 
-        Totals totals = Totals.of(plan.matches(), feeModel);
+        Totals totals = totals(order, plan.matches());
         long remaining = newRemaining - totals.filled();
         OrderExecutionReport ack = report(order, ExecType.NEW, OrderStatus.NEW, 0, 0, filledBefore, newRemaining, 0);
         OrderExecutionReport fill = report(
@@ -392,7 +410,13 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
                 price,
                 cumulativeQty,
                 remainingAfterFill,
-                (long) feeModel.calculateFee(price, filledQty, true));
+                feeModel.fee(
+                        nowNanos,
+                        localOrder.order.decoder.side() == Side.Bid,
+                        price,
+                        filledQty,
+                        true,
+                        feeState(localOrder.order)));
         report.encoder
                 .exchangeId((short) localOrder.order.decoder.exchangeId())
                 .securityId(localOrder.order.decoder.securityId())
@@ -413,7 +437,7 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
 
         orderBook.consume(order.decoder.side(), plan.matches());
         List<OrderExecutionReport> reports = cancelResting(plan);
-        Totals totals = Totals.of(plan.matches(), feeModel);
+        Totals totals = totals(order, plan.matches());
         long remaining = order.decoder.size() - totals.filled();
         OrderExecutionReport fill = report(
                 order,
@@ -471,7 +495,7 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
     private List<OrderExecutionReport> crossLimitOrder(Order order, MatchPlan plan, boolean stoppedAtSelf) {
         long orderSize = order.decoder.size();
         TimeInForce tif = order.decoder.timeInForce();
-        Totals totals = Totals.of(plan.matches(), feeModel);
+        Totals totals = totals(order, plan.matches());
         long remaining = orderSize - totals.filled();
         if (remaining > 0 && tif == TimeInForce.FILL_OR_KILL) {
             return List.of(rejected(order));
@@ -513,25 +537,24 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
         return reports;
     }
 
-    private record Totals(long filled, double notional, double feeTotal) {
-        static Totals of(List<OrderMatch> matches, FeeModel feeModel) {
-            long filled = 0;
-            double notional = 0;
-            double fee = 0;
-            for (OrderMatch match : matches) {
-                filled += match.size();
-                notional += (double) match.price() * match.size();
-                fee += feeModel.calculateFee(match.price(), match.size(), false);
-            }
-            return new Totals(filled, notional, fee);
+    /** What {@code order} takes from {@code matches}, each match a fill of its own at the venue. */
+    private Totals totals(Order order, List<OrderMatch> matches) {
+        boolean buy = order.decoder.side() == Side.Bid;
+        OrderFeeState state = feeState(order);
+        long filled = 0;
+        double notional = 0;
+        long fee = 0;
+        for (OrderMatch match : matches) {
+            filled += match.size();
+            notional += (double) match.price() * match.size();
+            fee += feeModel.fee(nowNanos, buy, match.price(), match.size(), false, state);
         }
+        return new Totals(filled, notional, fee);
+    }
 
+    private record Totals(long filled, double notional, long fee) {
         long vwap() {
             return (long) (notional / filled);
-        }
-
-        long fee() {
-            return (long) feeTotal;
         }
     }
 
@@ -571,6 +594,9 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
             long cumulativeQty,
             long leavesQty,
             long feeScaled) {
+        if (orderStatus != OrderStatus.NEW && orderStatus != OrderStatus.PARTIALLY_FILLED) {
+            feeStates.remove(clientOid);
+        }
         OrderExecutionReport report = new OrderExecutionReport();
         report.encodeClientOid(clientOid, strategyId);
         report.encoder

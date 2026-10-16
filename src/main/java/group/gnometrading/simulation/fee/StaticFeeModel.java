@@ -1,6 +1,7 @@
 package group.gnometrading.simulation.fee;
 
 import group.gnometrading.schemas.Statics;
+import group.gnometrading.sm.fee.OrderFeeState;
 
 public final class StaticFeeModel implements FeeModel {
 
@@ -13,8 +14,8 @@ public final class StaticFeeModel implements FeeModel {
     }
 
     @Override
-    public double calculateFee(long price, long quantity, boolean isMaker) {
+    public long fee(long nowNanos, boolean buy, long price, long quantity, boolean maker, OrderFeeState state) {
         double notional = price * ((double) quantity / Statics.SIZE_SCALING_FACTOR);
-        return isMaker ? notional * makerFee : notional * takerFee;
+        return (long) (maker ? notional * makerFee : notional * takerFee);
     }
 }

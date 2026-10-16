@@ -37,7 +37,11 @@ class MbpExchangeInteractionTest {
     private static MbpSimulatedExchange exchange(
             QueueModel queueModel, SelfTradePrevention rule, LatencyModel orderProcessing) {
         return new MbpSimulatedExchange(
-                (price, quantity, isMaker) -> 0, new StaticLatency(0), orderProcessing, queueModel, rule);
+                (now, buy, price, quantity, maker, state) -> 0,
+                new StaticLatency(0),
+                orderProcessing,
+                queueModel,
+                rule);
     }
 
     private static long filled(List<OrderExecutionReport> reports) {

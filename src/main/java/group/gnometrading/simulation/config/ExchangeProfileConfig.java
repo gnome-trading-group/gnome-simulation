@@ -5,12 +5,14 @@ import group.gnometrading.simulation.book.SelfTradePrevention;
 import group.gnometrading.simulation.exchange.MbpSimulatedExchange;
 import group.gnometrading.simulation.exchange.SimulatedExchange;
 import group.gnometrading.simulation.latency.LatencySeeds;
+import group.gnometrading.sm.fee.FeeTimeline;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.function.IntFunction;
 
 public final class ExchangeProfileConfig {
 
-    public FeeModelConfig feeModel = new FeeModelConfig.Static();
+    public FeeModelConfig feeModel = new FeeModelConfig.Registry();
     /**
      * When market data reaches the strategy. A backtest setting: paper trading gets live market data as it arrives.
      */
@@ -25,10 +27,11 @@ public final class ExchangeProfileConfig {
     /**
      * Builds the exchange with its random latency models seeded from {@code seed}, each with its own stream, unless a
      * model pins its own seed. Pass a different seed per listing so listings don't share latency draws.
+     * {@code registryFees} looks up a listing's fee timeline (SecurityMaster.getFeeTimeline) when the fee model needs it.
      */
-    public SimulatedExchange toSimulatedExchange(long seed) {
+    public SimulatedExchange toSimulatedExchange(int listingId, long seed, IntFunction<FeeTimeline> registryFees) {
         return new MbpSimulatedExchange(
-                feeModel.toModel(),
+                feeModel.toModel(listingId, registryFees),
                 networkLatency.toModel(LatencySeeds.derive(seed, LatencySeeds.NETWORK_STREAM)),
                 orderProcessingLatency.toModel(LatencySeeds.derive(seed, LatencySeeds.ORDER_PROCESSING_STREAM)),
                 queueModel.toModel(),
