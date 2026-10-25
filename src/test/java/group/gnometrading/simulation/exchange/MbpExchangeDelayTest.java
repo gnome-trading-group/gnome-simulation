@@ -138,7 +138,8 @@ class MbpExchangeDelayTest {
         exchange.processDue(MAKER_DELAY);
 
         // A trade at 99 fills order 1 at its own price, not the price the reused object now holds.
-        List<OrderExecutionReport> fills = exchange.onMarketData(makeTrade(Side.Ask, 99, 20));
+        List<OrderExecutionReport> fills =
+                exchange.onMarketData(makeTrade(group.gnometrading.schemas.book.Side.Ask, 99, 20));
         assertEquals(1L, fills.get(0).getClientOidCounter());
         assertEquals(99, fills.get(0).decoder.fillPrice());
     }

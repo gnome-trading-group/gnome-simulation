@@ -2,10 +2,8 @@ package group.gnometrading.simulation.exchange;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import group.gnometrading.schemas.Action;
 import group.gnometrading.schemas.ExecType;
 import group.gnometrading.schemas.MboSchema;
-import group.gnometrading.schemas.Mbp10Decoder;
 import group.gnometrading.schemas.Mbp10Schema;
 import group.gnometrading.schemas.Mbp1Schema;
 import group.gnometrading.schemas.Order;
@@ -15,6 +13,8 @@ import group.gnometrading.schemas.OrderType;
 import group.gnometrading.schemas.Side;
 import group.gnometrading.schemas.Statics;
 import group.gnometrading.schemas.TimeInForce;
+import group.gnometrading.schemas.book.Action;
+import group.gnometrading.schemas.book.Mbp10Decoder;
 import group.gnometrading.simulation.fee.FeeModel;
 import group.gnometrading.simulation.latency.LatencyModel;
 import group.gnometrading.simulation.queues.QueueModel;
@@ -72,7 +72,7 @@ class MBPMarketDataTest {
             long askSz1) {
         Mbp10Schema schema = new Mbp10Schema();
         schema.encoder.action(action);
-        schema.encoder.side(Side.None);
+        schema.encoder.side(group.gnometrading.schemas.book.Side.None);
         schema.encoder.price(PRICE_NULL);
         schema.encoder.size(SIZE_NULL);
         schema.encoder.bidPrice0(bidPx0);
@@ -131,7 +131,7 @@ class MBPMarketDataTest {
         return makeMarketUpdate(Action.Add, bidPx, bidSz, askPx, askSz, PRICE_NULL, -1, PRICE_NULL, -1);
     }
 
-    static Mbp10Schema makeTrade(Side side, long price, long size) {
+    static Mbp10Schema makeTrade(group.gnometrading.schemas.book.Side side, long price, long size) {
         Mbp10Schema schema = new Mbp10Schema();
         schema.encoder.action(Action.Trade);
         schema.encoder.side(side);
@@ -221,7 +221,7 @@ class MBPMarketDataTest {
         Mbp10Schema update = makeSingleLevelUpdate(100, 50, 102, 40);
         exchange.onMarketData(update);
 
-        Mbp10Schema trade = makeTrade(Side.Bid, 102, 10);
+        Mbp10Schema trade = makeTrade(group.gnometrading.schemas.book.Side.Bid, 102, 10);
         List<OrderExecutionReport> reports = exchange.onMarketData(trade);
         assertTrue(reports.isEmpty());
     }
@@ -237,7 +237,7 @@ class MBPMarketDataTest {
         Immediate.submit(exchange, askOrder);
 
         // Trade: buy 50 at 102 (phantom=40, trade=50 → 50-40=10 fills, but order is only 8)
-        Mbp10Schema trade = makeTrade(Side.Bid, 102, 50);
+        Mbp10Schema trade = makeTrade(group.gnometrading.schemas.book.Side.Bid, 102, 50);
         List<OrderExecutionReport> reports = exchange.onMarketData(trade);
 
         assertFalse(reports.isEmpty());
@@ -259,7 +259,8 @@ class MBPMarketDataTest {
                 exchange, makeOrder(102, tenThousand, Side.Ask, 1L, OrderType.LIMIT, TimeInForce.GOOD_TILL_CANCELED));
 
         // The 20,000 resting ahead of us fill first; the rest of the 30,000 bought reaches our order.
-        List<OrderExecutionReport> reports = exchange.onMarketData(makeTrade(Side.Bid, 102, 30_000_000_000L));
+        List<OrderExecutionReport> reports =
+                exchange.onMarketData(makeTrade(group.gnometrading.schemas.book.Side.Bid, 102, 30_000_000_000L));
 
         OrderExecutionReport report = reports.get(reports.size() - 1);
         assertEquals(ExecType.FILL, report.decoder.execType());
@@ -279,7 +280,7 @@ class MBPMarketDataTest {
         Immediate.submit(exchange, askOrder);
 
         // Trade 8 at 102: phantom=5, trade=8 → fills 3 of our 20 remaining
-        Mbp10Schema trade = makeTrade(Side.Bid, 102, 8);
+        Mbp10Schema trade = makeTrade(group.gnometrading.schemas.book.Side.Bid, 102, 8);
         List<OrderExecutionReport> reports = exchange.onMarketData(trade);
 
         assertFalse(reports.isEmpty());
@@ -302,7 +303,7 @@ class MBPMarketDataTest {
         Immediate.submit(exchange, bidOrder);
 
         // Sell trade at 100: phantom=10, trade=20 → fills 5 of our bid
-        Mbp10Schema trade = makeTrade(Side.Ask, 100, 20);
+        Mbp10Schema trade = makeTrade(group.gnometrading.schemas.book.Side.Ask, 100, 20);
         List<OrderExecutionReport> reports = exchange.onMarketData(trade);
 
         assertFalse(reports.isEmpty());
@@ -320,7 +321,7 @@ class MBPMarketDataTest {
         Immediate.submit(exchange, askOrder);
 
         // Trade fills ASK_1: price=102, qty=10. Maker fee = 3% = $30.6
-        Mbp10Schema trade = makeTrade(Side.Bid, 102 * P, 15 * S);
+        Mbp10Schema trade = makeTrade(group.gnometrading.schemas.book.Side.Bid, 102 * P, 15 * S);
         List<OrderExecutionReport> reports = exchange.onMarketData(trade);
 
         assertFalse(reports.isEmpty());
@@ -330,7 +331,7 @@ class MBPMarketDataTest {
     static Mbp1Schema makeMbp1Update(long bidPx, long bidSz, long askPx, long askSz) {
         Mbp1Schema schema = new Mbp1Schema();
         schema.encoder.action(Action.Add);
-        schema.encoder.side(Side.None);
+        schema.encoder.side(group.gnometrading.schemas.book.Side.None);
         schema.encoder.price(PRICE_NULL);
         schema.encoder.size(SIZE_NULL);
         schema.encoder.bidPrice0(bidPx);
@@ -340,7 +341,7 @@ class MBPMarketDataTest {
         return schema;
     }
 
-    static Mbp1Schema makeMbp1Trade(Side side, long price, long size) {
+    static Mbp1Schema makeMbp1Trade(group.gnometrading.schemas.book.Side side, long price, long size) {
         Mbp1Schema schema = new Mbp1Schema();
         schema.encoder.action(Action.Trade);
         schema.encoder.side(side);
@@ -376,7 +377,8 @@ class MBPMarketDataTest {
         Immediate.submit(exchange, ask);
 
         // Trade via MBP1: trade=15, phantom=5, fill=10
-        List<OrderExecutionReport> reports = exchange.onMarketData(makeMbp1Trade(Side.Bid, 102, 15));
+        List<OrderExecutionReport> reports =
+                exchange.onMarketData(makeMbp1Trade(group.gnometrading.schemas.book.Side.Bid, 102, 15));
 
         assertFalse(reports.isEmpty());
         assertEquals(1L, reports.get(0).getClientOidCounter());
@@ -402,7 +404,8 @@ class MBPMarketDataTest {
         Immediate.submit(exchange, ask2);
 
         // Trade 15 at 102: phantom=2, remainingVol=13, fills ask1(5) then ask2(3)
-        List<OrderExecutionReport> reports = exchange.onMarketData(makeTrade(Side.Bid, 102, 15));
+        List<OrderExecutionReport> reports =
+                exchange.onMarketData(makeTrade(group.gnometrading.schemas.book.Side.Bid, 102, 15));
 
         assertEquals(2, reports.size());
         assertEquals(1L, reports.get(0).getClientOidCounter());

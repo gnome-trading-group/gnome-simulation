@@ -4,8 +4,8 @@ import group.gnometrading.schemas.CancelOrder;
 import group.gnometrading.schemas.ModifyOrder;
 import group.gnometrading.schemas.Order;
 import group.gnometrading.schemas.OrderExecutionReport;
-import group.gnometrading.schemas.Schema;
-import group.gnometrading.schemas.SchemaType;
+import group.gnometrading.schemas.RecordType;
+import group.gnometrading.schemas.StreamRecord;
 import java.util.List;
 
 /**
@@ -28,9 +28,9 @@ public interface SimulatedExchange {
     /** When the next held message comes due, or {@link Long#MAX_VALUE} if none is held. */
     long nextDueNanos();
 
-    List<OrderExecutionReport> onMarketData(Schema data);
+    List<OrderExecutionReport> onMarketData(StreamRecord data);
 
     long simulateNetworkLatency();
 
-    List<SchemaType> getSupportedSchemas();
+    List<RecordType> getSupportedSchemas();
 }

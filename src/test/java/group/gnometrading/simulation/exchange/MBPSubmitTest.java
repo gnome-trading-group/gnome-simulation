@@ -2,7 +2,6 @@ package group.gnometrading.simulation.exchange;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import group.gnometrading.schemas.Action;
 import group.gnometrading.schemas.CancelOrder;
 import group.gnometrading.schemas.ExecType;
 import group.gnometrading.schemas.Liquidity;
@@ -16,6 +15,7 @@ import group.gnometrading.schemas.RejectReason;
 import group.gnometrading.schemas.Side;
 import group.gnometrading.schemas.Statics;
 import group.gnometrading.schemas.TimeInForce;
+import group.gnometrading.schemas.book.Action;
 import group.gnometrading.simulation.book.SelfTradePrevention;
 import group.gnometrading.simulation.fee.FeeModel;
 import group.gnometrading.simulation.latency.LatencyModel;
@@ -64,7 +64,7 @@ class MBPSubmitTest {
     static Mbp10Schema makeSingleLevelUpdate(long bidPx, long bidSz, long askPx, long askSz) {
         Mbp10Schema schema = new Mbp10Schema();
         schema.encoder.action(Action.Add);
-        schema.encoder.side(Side.None);
+        schema.encoder.side(group.gnometrading.schemas.book.Side.None);
         schema.encoder.price(PRICE_NULL);
         schema.encoder.size(SIZE_NULL);
         schema.encoder.bidPrice0(bidPx).bidSize0(bidSz == -1 ? SIZE_NULL : bidSz);
@@ -121,7 +121,7 @@ class MBPSubmitTest {
             long bidPx0, long bidSz0, long askPx0, long askSz0, long bidPx1, long bidSz1, long askPx1, long askSz1) {
         Mbp10Schema schema = new Mbp10Schema();
         schema.encoder.action(Action.Add);
-        schema.encoder.side(Side.None);
+        schema.encoder.side(group.gnometrading.schemas.book.Side.None);
         schema.encoder.price(PRICE_NULL);
         schema.encoder.size(SIZE_NULL);
         schema.encoder.bidPrice0(bidPx0).bidSize0(bidSz0).askPrice0(askPx0).askSize0(askSz0);
@@ -169,7 +169,7 @@ class MBPSubmitTest {
         return schema;
     }
 
-    static Mbp10Schema makeTrade(Side side, long price, long size) {
+    static Mbp10Schema makeTrade(group.gnometrading.schemas.book.Side side, long price, long size) {
         Mbp10Schema schema = new Mbp10Schema();
         schema.encoder.action(Action.Trade);
         schema.encoder.side(side);
@@ -535,7 +535,8 @@ class MBPSubmitTest {
         exchange.onMarketData(makeSingleLevelUpdate(100 * P, 50 * S, 102 * P, 5 * S));
         Immediate.submit(
                 exchange, makeOrder(102 * P, 10 * S, Side.Ask, 1L, OrderType.LIMIT, TimeInForce.GOOD_TILL_CANCELED));
-        List<OrderExecutionReport> partial = exchange.onMarketData(makeTrade(Side.Bid, 102 * P, 8 * S));
+        List<OrderExecutionReport> partial =
+                exchange.onMarketData(makeTrade(group.gnometrading.schemas.book.Side.Bid, 102 * P, 8 * S));
         assertEquals(3 * S, partial.get(0).decoder.cumulativeQty());
 
         // Re-price keeping order qty 10: FIX leaves 7 working, with the 3 filled still counted
@@ -545,7 +546,8 @@ class MBPSubmitTest {
         assertEquals(7 * S, ack.get(0).decoder.leavesQty());
 
         // The rest fills; cumulative qty continues from 3 rather than restarting at 0
-        List<OrderExecutionReport> fill = exchange.onMarketData(makeTrade(Side.Bid, 103 * P, 7 * S));
+        List<OrderExecutionReport> fill =
+                exchange.onMarketData(makeTrade(group.gnometrading.schemas.book.Side.Bid, 103 * P, 7 * S));
         assertEquals(ExecType.FILL, fill.get(0).decoder.execType());
         assertEquals(10 * S, fill.get(0).decoder.cumulativeQty());
     }
@@ -556,7 +558,7 @@ class MBPSubmitTest {
         exchange.onMarketData(makeSingleLevelUpdate(100 * P, 50 * S, 102 * P, 5 * S));
         Immediate.submit(
                 exchange, makeOrder(102 * P, 10 * S, Side.Ask, 1L, OrderType.LIMIT, TimeInForce.GOOD_TILL_CANCELED));
-        exchange.onMarketData(makeTrade(Side.Bid, 102 * P, 8 * S));
+        exchange.onMarketData(makeTrade(group.gnometrading.schemas.book.Side.Bid, 102 * P, 8 * S));
 
         List<OrderExecutionReport> reports = Immediate.cancel(exchange, makeCancel(1, 1, 1L));
 
@@ -570,7 +572,7 @@ class MBPSubmitTest {
         exchange.onMarketData(makeSingleLevelUpdate(100 * P, 50 * S, 102 * P, 5 * S));
         Immediate.submit(
                 exchange, makeOrder(102 * P, 10 * S, Side.Ask, 1L, OrderType.LIMIT, TimeInForce.GOOD_TILL_CANCELED));
-        exchange.onMarketData(makeTrade(Side.Bid, 102 * P, 8 * S)); // 3 filled
+        exchange.onMarketData(makeTrade(group.gnometrading.schemas.book.Side.Bid, 102 * P, 8 * S)); // 3 filled
 
         List<OrderExecutionReport> reports = Immediate.modify(exchange, makeModify(1, 1, 1L, 102 * P, 3 * S));
         assertEquals(ExecType.CANCEL_REJECT, reports.get(0).decoder.execType());
@@ -808,7 +810,8 @@ class MBPSubmitTest {
         Immediate.submit(exchange, askOrder);
 
         // Trade 15 at 102: phantom=5, remainingVol=10, fills all 10
-        List<OrderExecutionReport> reports = exchange.onMarketData(makeTrade(Side.Bid, 102 * P, 15 * S));
+        List<OrderExecutionReport> reports =
+                exchange.onMarketData(makeTrade(group.gnometrading.schemas.book.Side.Bid, 102 * P, 15 * S));
 
         assertEquals(1, reports.size());
         OrderExecutionReport r = reports.get(0);

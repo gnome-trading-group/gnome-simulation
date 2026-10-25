@@ -1,10 +1,8 @@
 package group.gnometrading.simulation.exchange;
 
-import group.gnometrading.schemas.Action;
 import group.gnometrading.schemas.CancelOrder;
 import group.gnometrading.schemas.ExecType;
 import group.gnometrading.schemas.Liquidity;
-import group.gnometrading.schemas.Mbp10Decoder;
 import group.gnometrading.schemas.Mbp10Schema;
 import group.gnometrading.schemas.Mbp1Schema;
 import group.gnometrading.schemas.ModifyOrder;
@@ -12,11 +10,13 @@ import group.gnometrading.schemas.Order;
 import group.gnometrading.schemas.OrderExecutionReport;
 import group.gnometrading.schemas.OrderStatus;
 import group.gnometrading.schemas.OrderType;
+import group.gnometrading.schemas.RecordType;
 import group.gnometrading.schemas.RejectReason;
-import group.gnometrading.schemas.Schema;
-import group.gnometrading.schemas.SchemaType;
 import group.gnometrading.schemas.Side;
+import group.gnometrading.schemas.StreamRecord;
 import group.gnometrading.schemas.TimeInForce;
+import group.gnometrading.schemas.book.Action;
+import group.gnometrading.schemas.book.Mbp10Decoder;
 import group.gnometrading.simulation.book.BidAskLevel;
 import group.gnometrading.simulation.book.LocalOrder;
 import group.gnometrading.simulation.book.LocalOrderFill;
@@ -83,7 +83,7 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
     }
 
     @Override
-    public List<OrderExecutionReport> onMarketData(Schema data) {
+    public List<OrderExecutionReport> onMarketData(StreamRecord data) {
         if (data instanceof Mbp10Schema mbp10) {
             advanceTo(mbp10.decoder.timestampEvent());
             return onMbp10(mbp10);
@@ -91,7 +91,7 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
             advanceTo(mbp1.decoder.timestampEvent());
             return onMbp1(mbp1);
         }
-        throw new IllegalArgumentException("Unsupported schema type: " + data.schemaType);
+        throw new IllegalArgumentException("Unsupported schema type: " + data.recordType);
     }
 
     @Override
@@ -350,8 +350,8 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
     }
 
     @Override
-    public List<SchemaType> getSupportedSchemas() {
-        return List.of(SchemaType.MBP_10, SchemaType.MBP_1);
+    public List<RecordType> getSupportedSchemas() {
+        return List.of(RecordType.MBP_10, RecordType.MBP_1);
     }
 
     private List<OrderExecutionReport> onMbp10(Mbp10Schema schema) {

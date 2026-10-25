@@ -75,8 +75,8 @@ class ScheduledFeesExchangeTest {
         assertEquals(1733 * P / 10_000, taker.decoder.fee());
 
         // The resting 1 fills as a maker; the rounding the taker fill left over pays back $0.0001 of it.
-        OrderExecutionReport maker =
-                fill(exchange.onMarketData(at(MBPMarketDataTest.makeTrade(Side.Ask, 55 * CENT, 5 * S), JULY + 1)));
+        OrderExecutionReport maker = fill(exchange.onMarketData(
+                at(MBPMarketDataTest.makeTrade(group.gnometrading.schemas.book.Side.Ask, 55 * CENT, 5 * S), JULY + 1)));
         assertEquals(Liquidity.MAKER, maker.decoder.liquidity());
         assertEquals(43 * P / 10_000, maker.decoder.fee());
     }

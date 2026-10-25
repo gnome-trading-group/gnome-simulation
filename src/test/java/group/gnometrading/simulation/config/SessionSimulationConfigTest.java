@@ -9,8 +9,7 @@ import org.junit.jupiter.api.Test;
 
 class SessionSimulationConfigTest {
 
-    private final Listing kalshi =
-            new Listing(48212, new Exchange(3, "KALSHI", "Kalshi", "us-east-1", null), null, "a", "A");
+    private final Listing kalshi = new Listing(48212, new Exchange(3, "KALSHI", "Kalshi", "us-east-1"), null, "a", "A");
 
     @Test
     void readsThePinnedTimeSeedAndOverridesByExchangeCodeAndListing() {

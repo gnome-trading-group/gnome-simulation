@@ -37,7 +37,7 @@
         <dependency>
             <groupId>group.gnometrading</groupId>
             <artifactId>gnome-schemas</artifactId>
-            <version>1.8.2</version>
+            <version>2.0.0</version>
         </dependency>
         <dependency>
             <groupId>group.gnometrading</groupId>
@@ -47,7 +47,7 @@
         <dependency>
             <groupId>group.gnometrading</groupId>
             <artifactId>gnome-registry</artifactId>
-            <version>1.41.0</version>
+            <version>1.46.1</version>
         </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>

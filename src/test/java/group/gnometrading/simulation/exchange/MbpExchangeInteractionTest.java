@@ -70,7 +70,7 @@ class MbpExchangeInteractionTest {
         assertEquals(0, filled(Immediate.submit(ex, ioc(100, 3, 4L))));
 
         // Our ask is now at the front: the next market trade fills it.
-        assertEquals(2, filled(ex.onMarketData(makeTrade(Side.Bid, 100, 2))));
+        assertEquals(2, filled(ex.onMarketData(makeTrade(group.gnometrading.schemas.book.Side.Bid, 100, 2))));
     }
 
     @Test
@@ -90,7 +90,7 @@ class MbpExchangeInteractionTest {
             Immediate.submit(ex, makeLimitOrder(90, 5, Side.Bid, 99L));
         }
         Immediate.submit(ex, ioc(100, 4, 1L));
-        ex.onMarketData(makeTrade(Side.Bid, 100, 3));
+        ex.onMarketData(makeTrade(group.gnometrading.schemas.book.Side.Bid, 100, 3));
         ex.onMarketData(makeSingleLevelUpdate(98, 10, 100, 7));
         return filled(Immediate.submit(ex, ioc(100, 10, 2L)));
     }
@@ -101,7 +101,7 @@ class MbpExchangeInteractionTest {
         ex.onMarketData(makeSingleLevelUpdate(98, 10, 100, 10));
         Immediate.submit(ex, makeLimitOrder(90, 5, Side.Bid, 99L));
         Immediate.submit(ex, ioc(100, 10, 1L));
-        ex.onMarketData(makeTrade(Side.Bid, 100, 10));
+        ex.onMarketData(makeTrade(group.gnometrading.schemas.book.Side.Bid, 100, 10));
         ex.onMarketData(makeSingleLevelUpdate(98, 10, 100, 20));
 
         assertEquals(20, filled(Immediate.submit(ex, ioc(100, 20, 2L))));
@@ -127,7 +127,7 @@ class MbpExchangeInteractionTest {
         Immediate.submit(ex, makeOrder(98, 10, Side.Ask, 1L, OrderType.LIMIT, TimeInForce.IMMEDIATE_OR_CANCELED));
         Immediate.submit(ex, makeLimitOrder(98, 5, Side.Bid, 2L));
 
-        assertEquals(5, filled(ex.onMarketData(makeTrade(Side.Ask, 98, 5))));
+        assertEquals(5, filled(ex.onMarketData(makeTrade(group.gnometrading.schemas.book.Side.Ask, 98, 5))));
     }
 
     @Test

@@ -24,9 +24,9 @@ class SimulationResolverTest {
              "self_trade_prevention": "CANCEL_INCOMING"}""";
 
     private final Listing kalshiListing =
-            new Listing(7, new Exchange(1, "KALSHI", "Kalshi", "us-east-1", null), null, "a", "A");
+            new Listing(7, new Exchange(1, "KALSHI", "Kalshi", "us-east-1"), null, "a", "A");
     private final Listing binanceListing =
-            new Listing(9, new Exchange(6, "BINANCE", "Binance", "ap-northeast-1", null), null, "b", "B");
+            new Listing(9, new Exchange(6, "BINANCE", "Binance", "ap-northeast-1"), null, "b", "B");
     private SecurityMaster securityMaster;
     private SimulationResolver resolver;
 

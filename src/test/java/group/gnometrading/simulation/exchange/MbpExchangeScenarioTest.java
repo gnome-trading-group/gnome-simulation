@@ -6,11 +6,9 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
-import group.gnometrading.schemas.Action;
 import group.gnometrading.schemas.CancelOrder;
 import group.gnometrading.schemas.ExecType;
 import group.gnometrading.schemas.Liquidity;
-import group.gnometrading.schemas.Mbp10Decoder;
 import group.gnometrading.schemas.Mbp10Schema;
 import group.gnometrading.schemas.ModifyOrder;
 import group.gnometrading.schemas.Order;
@@ -19,6 +17,8 @@ import group.gnometrading.schemas.OrderStatus;
 import group.gnometrading.schemas.OrderType;
 import group.gnometrading.schemas.Side;
 import group.gnometrading.schemas.TimeInForce;
+import group.gnometrading.schemas.book.Action;
+import group.gnometrading.schemas.book.Mbp10Decoder;
 import group.gnometrading.simulation.book.SelfTradePrevention;
 import group.gnometrading.simulation.fee.FeeModel;
 import group.gnometrading.simulation.latency.LatencyModel;
@@ -212,8 +212,11 @@ class MbpExchangeScenarioTest {
                             long oid = oidMap.computeIfAbsent(event.order.clientOid, k -> nextOid[0]++);
                             yield Immediate.submit(exchange, buildOrder(event.order, oid));
                         }
-                        case "trade" -> exchange.onMarketData(
-                                buildTrade(parseSide(event.side), event.price, event.size));
+                        case "trade" -> exchange.onMarketData(buildTrade(
+                                group.gnometrading.schemas.book.Side.valueOf(
+                                        parseSide(event.side).name()),
+                                event.price,
+                                event.size));
                         case "cancel_order" -> {
                             long oid = oidMap.computeIfAbsent(event.clientOid, k -> nextOid[0]++);
                             yield Immediate.cancel(exchange, buildCancel(oid));
@@ -298,7 +301,7 @@ class MbpExchangeScenarioTest {
 
         Mbp10Schema schema = new Mbp10Schema();
         schema.encoder.action(Action.Add);
-        schema.encoder.side(Side.None);
+        schema.encoder.side(group.gnometrading.schemas.book.Side.None);
         schema.encoder.price(PRICE_NULL);
         schema.encoder.size(SIZE_NULL);
         schema.encoder
@@ -354,7 +357,7 @@ class MbpExchangeScenarioTest {
         return schema;
     }
 
-    private static Mbp10Schema buildTrade(Side side, long price, long size) {
+    private static Mbp10Schema buildTrade(group.gnometrading.schemas.book.Side side, long price, long size) {
         Mbp10Schema schema = new Mbp10Schema();
         schema.encoder.action(Action.Trade);
         schema.encoder.side(side);

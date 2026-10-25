@@ -6,17 +6,17 @@ import static group.gnometrading.simulation.exchange.MBPSubmitTest.makeOrder;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.fail;
 
-import group.gnometrading.schemas.Action;
 import group.gnometrading.schemas.ExecType;
 import group.gnometrading.schemas.Liquidity;
-import group.gnometrading.schemas.Mbp10Decoder;
 import group.gnometrading.schemas.Mbp10Schema;
 import group.gnometrading.schemas.Mbp1Schema;
 import group.gnometrading.schemas.OrderExecutionReport;
 import group.gnometrading.schemas.OrderType;
-import group.gnometrading.schemas.Schema;
 import group.gnometrading.schemas.Side;
+import group.gnometrading.schemas.StreamRecord;
 import group.gnometrading.schemas.TimeInForce;
+import group.gnometrading.schemas.book.Action;
+import group.gnometrading.schemas.book.Mbp10Decoder;
 import group.gnometrading.simulation.book.LocalOrder;
 import group.gnometrading.simulation.book.OrderBookLevel;
 import group.gnometrading.simulation.book.SelfTradePrevention;
@@ -121,14 +121,17 @@ class MbpExchangeInvariantTest {
     void queueModelsFillAPassiveOrderInOrderOfOptimism() {
         for (int seed = 0; seed < TRIALS; seed++) {
             Random random = new Random(seed);
-            List<Schema> events = new ArrayList<>();
+            List<StreamRecord> events = new ArrayList<>();
             long mid = 100;
             for (int i = 0; i < 300; i++) {
                 if (random.nextInt(3) == 0) {
                     Mbp10Schema trade = Trial.emptyMbp10(Action.Trade);
                     boolean buy = random.nextBoolean();
                     trade.encoder
-                            .side(buy ? Side.Bid : Side.Ask)
+                            .side(
+                                    buy
+                                            ? group.gnometrading.schemas.book.Side.Bid
+                                            : group.gnometrading.schemas.book.Side.Ask)
                             .price(buy ? mid + 1 : mid)
                             .size(1 + random.nextInt(20));
                     events.add(trade);
@@ -154,7 +157,7 @@ class MbpExchangeInvariantTest {
     }
 
     /** Rests a bid at 100 behind the opening book, replays {@code events}, and returns its cumulative fill after each. */
-    private static long[] replay(QueueModel queueModel, List<Schema> events) {
+    private static long[] replay(QueueModel queueModel, List<StreamRecord> events) {
         MbpSimulatedExchange exchange = new MbpSimulatedExchange(
                 (now, buy, price, quantity, maker, state) -> 0, new StaticLatency(0), new StaticLatency(0), queueModel);
         exchange.onMarketData(Trial.mbp10(List.<long[]>of(new long[] {100, 30, 101, 30})));
@@ -288,7 +291,7 @@ class MbpExchangeInvariantTest {
 
         // --- actions ---
 
-        private Schema snapshot() {
+        private StreamRecord snapshot() {
             List<long[]> levels;
             if (lastSnapshot != null && random.nextInt(5) == 0) {
                 levels = lastSnapshot;
@@ -320,13 +323,14 @@ class MbpExchangeInvariantTest {
             return schema;
         }
 
-        private Schema trade() {
+        private StreamRecord trade() {
             boolean buyAggressor = random.nextBoolean();
             // Mostly at the touch, sometimes sweeping through several levels.
             long through = random.nextInt(4) == 0 ? random.nextInt(5) : 0;
             long price = buyAggressor ? mid + 1 + random.nextInt(2) + through : mid - random.nextInt(2) - through;
             long size = 1 + random.nextInt(through > 0 ? 80 : 25);
-            Side aggressor = buyAggressor ? Side.Bid : Side.Ask;
+            group.gnometrading.schemas.book.Side aggressor =
+                    buyAggressor ? group.gnometrading.schemas.book.Side.Bid : group.gnometrading.schemas.book.Side.Ask;
             if (mbp1) {
                 Mbp1Schema schema = mbp1(new long[] {PRICE_NULL, 0, PRICE_NULL, 0}, Action.Trade);
                 schema.encoder.side(aggressor).price(price).size(size);
@@ -665,7 +669,11 @@ class MbpExchangeInvariantTest {
 
         private static Mbp1Schema mbp1(long[] l, Action action) {
             Mbp1Schema schema = new Mbp1Schema();
-            schema.encoder.action(action).side(Side.None).price(PRICE_NULL).size(SIZE_NULL);
+            schema.encoder
+                    .action(action)
+                    .side(group.gnometrading.schemas.book.Side.None)
+                    .price(PRICE_NULL)
+                    .size(SIZE_NULL);
             schema.encoder
                     .bidPrice0(l[0])
                     .bidSize0(l[0] == PRICE_NULL ? SIZE_NULL : l[1])
@@ -677,7 +685,10 @@ class MbpExchangeInvariantTest {
         private static Mbp10Schema emptyMbp10(Action action) {
             Mbp10Schema schema = new Mbp10Schema();
             var e = schema.encoder;
-            e.action(action).side(Side.None).price(PRICE_NULL).size(SIZE_NULL);
+            e.action(action)
+                    .side(group.gnometrading.schemas.book.Side.None)
+                    .price(PRICE_NULL)
+                    .size(SIZE_NULL);
             e.bidPrice0(PRICE_NULL).bidSize0(SIZE_NULL).askPrice0(PRICE_NULL).askSize0(SIZE_NULL);
             e.bidPrice1(PRICE_NULL).bidSize1(SIZE_NULL).askPrice1(PRICE_NULL).askSize1(SIZE_NULL);
             e.bidPrice2(PRICE_NULL).bidSize2(SIZE_NULL).askPrice2(PRICE_NULL).askSize2(SIZE_NULL);

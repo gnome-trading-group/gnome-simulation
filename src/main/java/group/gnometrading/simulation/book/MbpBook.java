@@ -156,11 +156,11 @@ public final class MbpBook {
     /**
      * Processes a trade from the market feed, filling local orders on the opposite side.
      */
-    public List<LocalOrderFill> onTrade(long price, long size, Side tradeSide) {
+    public List<LocalOrderFill> onTrade(long price, long size, group.gnometrading.schemas.book.Side tradeSide) {
         // Runs even with no local orders: the trade takes market volume off each level it reaches, which is what lets a
         // later snapshot's shrink be read as cancels.
         // The trade side is the aggressor side; our local orders are on the opposite side
-        boolean tradeIsBid = tradeSide == Side.Bid;
+        boolean tradeIsBid = tradeSide == group.gnometrading.schemas.book.Side.Bid;
         TreeMap<Long, OrderBookLevel> oppBook = tradeIsBid ? asks : bids;
         List<LocalOrderFill> allFills = new ArrayList<>();
 

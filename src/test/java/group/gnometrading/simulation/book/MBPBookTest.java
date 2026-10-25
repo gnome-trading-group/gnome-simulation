@@ -117,7 +117,7 @@ class MBPBookTest {
         book.addLocalOrder(askOrder);
 
         // Trade: buy 50 at 102. phantom=40, trade=50 → remainingVolume=10 → fills min(8,10)=8
-        List<LocalOrderFill> fills = book.onTrade(102, 50, Side.Bid);
+        List<LocalOrderFill> fills = book.onTrade(102, 50, group.gnometrading.schemas.book.Side.Bid);
         assertFalse(fills.isEmpty());
         assertEquals(1L, fills.get(0).localOrder().order.getClientOidCounter());
         assertEquals(8, fills.get(0).fillSize());
@@ -129,7 +129,7 @@ class MBPBookTest {
         List<BidAskLevel> levels = List.of(makeBidAskLevel(100, 50, 102, 40));
         book.onMarketUpdate(levels, 10);
 
-        List<LocalOrderFill> fills = book.onTrade(102, 10, Side.Bid);
+        List<LocalOrderFill> fills = book.onTrade(102, 10, group.gnometrading.schemas.book.Side.Bid);
         assertTrue(fills.isEmpty());
     }
 
@@ -246,7 +246,7 @@ class MBPBookTest {
 
         // Aggressive buy trades that hit our ASK at 102.
         // Level 101 (size=40) is consumed first. Then at 102: phantom=35, remaining=40 → fills min(8,5)=5
-        List<LocalOrderFill> fills = book.onTrade(102, 80, Side.Bid);
+        List<LocalOrderFill> fills = book.onTrade(102, 80, group.gnometrading.schemas.book.Side.Bid);
 
         assertFalse(fills.isEmpty());
 
@@ -567,7 +567,7 @@ class MBPBookTest {
         book.addLocalOrder(order);
 
         // Trade that fully fills the order
-        List<LocalOrderFill> fills = book.onTrade(102, 100, Side.Bid);
+        List<LocalOrderFill> fills = book.onTrade(102, 100, group.gnometrading.schemas.book.Side.Bid);
 
         assertEquals(1, fills.size());
         assertEquals(8, fills.get(0).fillSize());
@@ -585,12 +585,12 @@ class MBPBookTest {
         book.addLocalOrder(order);
 
         // First trade: fully fills the order
-        List<LocalOrderFill> fills1 = book.onTrade(102, 100, Side.Bid);
+        List<LocalOrderFill> fills1 = book.onTrade(102, 100, group.gnometrading.schemas.book.Side.Bid);
         assertEquals(1, fills1.size());
         assertEquals(8, fills1.get(0).fillSize());
 
         // Second trade at the same price: stale order must not produce a duplicate fill
-        List<LocalOrderFill> fills2 = book.onTrade(102, 100, Side.Bid);
+        List<LocalOrderFill> fills2 = book.onTrade(102, 100, group.gnometrading.schemas.book.Side.Bid);
         assertTrue(fills2.isEmpty());
     }
 
@@ -617,7 +617,7 @@ class MBPBookTest {
         book.addLocalOrder(order);
 
         // Partial fill: 5 of 10 units
-        List<LocalOrderFill> fills = book.onTrade(102, 5, Side.Bid);
+        List<LocalOrderFill> fills = book.onTrade(102, 5, group.gnometrading.schemas.book.Side.Bid);
 
         assertEquals(1, fills.size());
         assertEquals(5, fills.get(0).fillSize());
@@ -643,7 +643,7 @@ class MBPBookTest {
         book.addLocalOrder(makeOrder(102, 6, Side.Ask, 2L));
 
         // Trade 20 at 102: phantom=5, remaining=15. Fill order 1 (4), then order 2 (6)
-        List<LocalOrderFill> fills = book.onTrade(102, 20, Side.Bid);
+        List<LocalOrderFill> fills = book.onTrade(102, 20, group.gnometrading.schemas.book.Side.Bid);
 
         assertEquals(2, fills.size());
         assertEquals(1L, fills.get(0).localOrder().order.getClientOidCounter());
@@ -666,7 +666,7 @@ class MBPBookTest {
         // At 100: onTrade(40, deque): phantom=10, remainingVol=40-10=30, fill min(5,30)=5
         //   filledQty=5, remainingSize=40-5=35, consume level.size=min(35,10)=10, remainingSize=25
         // At 99: onTrade(25, deque): phantom=20, remainingVol=25-20=5, fill min(3,5)=3
-        List<LocalOrderFill> fills = book.onTrade(99, 40, Side.Ask);
+        List<LocalOrderFill> fills = book.onTrade(99, 40, group.gnometrading.schemas.book.Side.Ask);
 
         assertEquals(2, fills.size());
         assertEquals(1L, fills.get(0).localOrder().order.getClientOidCounter());
@@ -684,7 +684,7 @@ class MBPBookTest {
         book.addLocalOrder(makeOrder(102, 10, Side.Ask, 1L));
 
         // Trade 5 at 102: phantom=3, remainingVol=5-3=2, fill min(10,2)=2
-        List<LocalOrderFill> fills = book.onTrade(102, 5, Side.Bid);
+        List<LocalOrderFill> fills = book.onTrade(102, 5, group.gnometrading.schemas.book.Side.Bid);
 
         assertEquals(1, fills.size());
         assertEquals(2, fills.get(0).fillSize());
@@ -703,7 +703,7 @@ class MBPBookTest {
         book.addLocalOrder(makeOrder(103, 5, Side.Ask, 2L));
 
         // Trade up to 102: should process 101 (<=102) but NOT 103 (>102)
-        List<LocalOrderFill> fills = book.onTrade(102, 50, Side.Bid);
+        List<LocalOrderFill> fills = book.onTrade(102, 50, group.gnometrading.schemas.book.Side.Bid);
 
         assertEquals(1, fills.size());
         assertEquals(1L, fills.get(0).localOrder().order.getClientOidCounter());
