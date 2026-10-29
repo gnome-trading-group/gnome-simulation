@@ -2122,8 +2122,8 @@ events:
       order_type: LIMIT
       tif: IOC
     expected_reports:
-      - exec_type: REJECT
-        order_status: REJECTED
+      - exec_type: CANCEL
+        order_status: CANCELED
         client_oid: IOC_BID_1
 
   - type: submit_order
@@ -2135,8 +2135,8 @@ events:
       order_type: LIMIT
       tif: IOC
     expected_reports:
-      - exec_type: REJECT
-        order_status: REJECTED
+      - exec_type: CANCEL
+        order_status: CANCELED
         client_oid: IOC_ASK_1
 
   - type: submit_order
@@ -2148,8 +2148,8 @@ events:
       order_type: LIMIT
       tif: FOK
     expected_reports:
-      - exec_type: REJECT
-        order_status: REJECTED
+      - exec_type: CANCEL
+        order_status: CANCELED
         client_oid: FOK_BID_1
 
   - type: submit_order
@@ -2161,8 +2161,8 @@ events:
       order_type: LIMIT
       tif: FOK
     expected_reports:
-      - exec_type: REJECT
-        order_status: REJECTED
+      - exec_type: CANCEL
+        order_status: CANCELED
         client_oid: FOK_ASK_1
 
   - type: submit_order
@@ -2174,8 +2174,8 @@ events:
       order_type: LIMIT
       tif: IOC
     expected_reports:
-      - exec_type: REJECT
-        order_status: REJECTED
+      - exec_type: CANCEL
+        order_status: CANCELED
         client_oid: IOC_BID_2
 
   - type: submit_order
@@ -2187,8 +2187,8 @@ events:
       order_type: LIMIT
       tif: IOC
     expected_reports:
-      - exec_type: REJECT
-        order_status: REJECTED
+      - exec_type: CANCEL
+        order_status: CANCELED
         client_oid: IOC_ASK_2
 
   # ============================================================

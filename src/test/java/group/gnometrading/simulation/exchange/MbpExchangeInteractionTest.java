@@ -140,7 +140,7 @@ class MbpExchangeInteractionTest {
                 Immediate.submit(ex, makeOrder(101, 5, Side.Bid, 2L, OrderType.LIMIT, TimeInForce.FILL_OR_KILL));
 
         assertEquals(1, reports.size());
-        assertEquals(ExecType.REJECT, reports.get(0).decoder.execType());
+        assertEquals(ExecType.CANCEL, reports.get(0).decoder.execType());
         assertEquals(
                 ExecType.CANCEL,
                 Immediate.cancel(ex, makeCancel(1, 1, 1L)).get(0).decoder.execType());

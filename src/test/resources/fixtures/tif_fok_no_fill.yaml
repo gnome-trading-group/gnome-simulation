@@ -12,6 +12,6 @@ events:
       order_type: LIMIT
       tif: FOK
     expected_reports:
-      - exec_type: REJECT
-        order_status: REJECTED
+      - exec_type: CANCEL
+        order_status: CANCELED
         client_oid: FOK_1

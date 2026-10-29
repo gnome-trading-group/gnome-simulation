@@ -287,13 +287,13 @@ class MBPSubmitTest {
     }
 
     @Test
-    void testMarketOrderNoLiquidityRejected() {
+    void testMarketOrderNoLiquidityCanceled() {
         Order order = makeMarketOrder(10, Side.Bid, 1L);
         List<OrderExecutionReport> reports = Immediate.submit(exchange, order);
 
         assertEquals(1, reports.size());
-        assertEquals(ExecType.REJECT, reports.get(0).decoder.execType());
-        assertEquals(OrderStatus.REJECTED, reports.get(0).decoder.orderStatus());
+        assertEquals(ExecType.CANCEL, reports.get(0).decoder.execType());
+        assertEquals(OrderStatus.CANCELED, reports.get(0).decoder.orderStatus());
     }
 
     @Test
@@ -308,21 +308,21 @@ class MBPSubmitTest {
     }
 
     @Test
-    void testIocLimitOrderNoFillRejected() {
+    void testIocLimitOrderNoFillCanceled() {
         Order order = makeOrder(100, 10, Side.Bid, 1L, OrderType.LIMIT, TimeInForce.IMMEDIATE_OR_CANCELED);
         List<OrderExecutionReport> reports = Immediate.submit(exchange, order);
 
         assertEquals(1, reports.size());
-        assertEquals(ExecType.REJECT, reports.get(0).decoder.execType());
+        assertEquals(ExecType.CANCEL, reports.get(0).decoder.execType());
     }
 
     @Test
-    void testFokLimitOrderNoFillRejected() {
+    void testFokLimitOrderNoFillCanceled() {
         Order order = makeOrder(100, 10, Side.Bid, 1L, OrderType.LIMIT, TimeInForce.FILL_OR_KILL);
         List<OrderExecutionReport> reports = Immediate.submit(exchange, order);
 
         assertEquals(1, reports.size());
-        assertEquals(ExecType.REJECT, reports.get(0).decoder.execType());
+        assertEquals(ExecType.CANCEL, reports.get(0).decoder.execType());
     }
 
     @Test
@@ -433,15 +433,15 @@ class MBPSubmitTest {
     }
 
     @Test
-    void testLimitOrderPartialCrossFokRejected() {
+    void testLimitOrderPartialCrossFokCanceled() {
         exchange.onMarketData(makeSingleLevelUpdate(100, 50, 101, 10));
 
         Order fok = makeOrder(101, 25, Side.Bid, 1L, OrderType.LIMIT, TimeInForce.FILL_OR_KILL);
         List<OrderExecutionReport> reports = Immediate.submit(exchange, fok);
 
         assertEquals(1, reports.size());
-        assertEquals(ExecType.REJECT, reports.get(0).decoder.execType());
-        assertEquals(OrderStatus.REJECTED, reports.get(0).decoder.orderStatus());
+        assertEquals(ExecType.CANCEL, reports.get(0).decoder.execType());
+        assertEquals(OrderStatus.CANCELED, reports.get(0).decoder.orderStatus());
     }
 
     // --- Market order edge cases ---
@@ -658,14 +658,12 @@ class MBPSubmitTest {
 
     @Test
     void testZeroPriceMarketOrderAllowed() {
-        // Market orders have no price, so price=0 should not be rejected for MARKET type
-        // (will reject due to no liquidity, not validation)
+        // Market orders have no price, so price=0 is not refused as invalid; with nothing to take it is canceled.
         Order order = makeOrder(0, 10, Side.Bid, 1L, OrderType.MARKET, TimeInForce.GOOD_TILL_CANCELED);
         List<OrderExecutionReport> reports = Immediate.submit(exchange, order);
 
         assertEquals(1, reports.size());
-        // Reject due to no liquidity, not due to validation
-        assertEquals(ExecType.REJECT, reports.get(0).decoder.execType());
+        assertEquals(ExecType.CANCEL, reports.get(0).decoder.execType());
     }
 
     // --- Self-trade prevention ---

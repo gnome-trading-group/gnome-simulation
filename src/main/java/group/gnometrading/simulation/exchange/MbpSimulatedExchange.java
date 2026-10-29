@@ -428,10 +428,7 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
         MatchPlan plan = orderBook.planMatches(order, selfTradePrevention);
         if (plan.matches().isEmpty()) {
             List<OrderExecutionReport> reports = cancelResting(plan);
-            reports.add(
-                    plan.stoppedAtSelf()
-                            ? report(order, ExecType.CANCEL, OrderStatus.CANCELED, 0, 0, 0, 0, 0)
-                            : rejected(order));
+            reports.add(unfilled(order));
             return reports;
         }
 
@@ -475,15 +472,11 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
     private List<OrderExecutionReport> restLimitOrder(Order order, MatchPlan plan) {
         // A fill-or-kill that cannot fill does nothing at all, including to our resting orders.
         if (order.decoder.timeInForce() == TimeInForce.FILL_OR_KILL) {
-            return List.of(rejected(order));
+            return List.of(unfilled(order));
         }
         List<OrderExecutionReport> reports = cancelResting(plan);
-        if (plan.stoppedAtSelf()) {
-            reports.add(report(order, ExecType.CANCEL, OrderStatus.CANCELED, 0, 0, 0, 0, 0));
-            return reports;
-        }
-        if (order.decoder.timeInForce() == TimeInForce.IMMEDIATE_OR_CANCELED) {
-            reports.add(rejected(order));
+        if (plan.stoppedAtSelf() || order.decoder.timeInForce() == TimeInForce.IMMEDIATE_OR_CANCELED) {
+            reports.add(unfilled(order));
             return reports;
         }
         orderBook.addLocalOrder(order);
@@ -498,7 +491,7 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
         Totals totals = totals(order, plan.matches());
         long remaining = orderSize - totals.filled();
         if (remaining > 0 && tif == TimeInForce.FILL_OR_KILL) {
-            return List.of(rejected(order));
+            return List.of(unfilled(order));
         }
 
         orderBook.consume(order.decoder.side(), plan.matches());
@@ -608,6 +601,15 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
                 .leavesQty(leavesQty)
                 .fee(feeScaled);
         return report;
+    }
+
+    /**
+     * An order that ends without filling or resting: a market take, IOC or FOK with nothing to match at its price, or
+     * one self-trade prevention stopped. The venues cancel such an order, and the live gateways report that as a
+     * CANCEL, so paper does too; a REJECT here read as a refusal with no reason (paper session 2026-10-29).
+     */
+    private OrderExecutionReport unfilled(Order order) {
+        return report(order, ExecType.CANCEL, OrderStatus.CANCELED, 0, 0, 0, 0, 0);
     }
 
     private OrderExecutionReport rejected(Order order) {

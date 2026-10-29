@@ -58,7 +58,7 @@ events:
         leaves_qty: 0
         cumulative_qty: 17
 
-  # MARKET BUY — every ask has been taken: rejected for no liquidity
+  # MARKET BUY — every ask has been taken: canceled, nothing to take
   - type: submit_order
     order:
       side: Bid
@@ -68,8 +68,8 @@ events:
       order_type: MARKET
       tif: GTC
     expected_reports:
-      - exec_type: REJECT
-        order_status: REJECTED
+      - exec_type: CANCEL
+        order_status: CANCELED
         client_oid: MKT_BID_3
 
   # ============================================================
@@ -108,7 +108,7 @@ events:
         leaves_qty: 0
         cumulative_qty: 15
 
-  # MARKET SELL — every bid has been taken: rejected for no liquidity
+  # MARKET SELL — every bid has been taken: canceled, nothing to take
   - type: submit_order
     order:
       side: Ask
@@ -118,6 +118,6 @@ events:
       order_type: MARKET
       tif: GTC
     expected_reports:
-      - exec_type: REJECT
-        order_status: REJECTED
+      - exec_type: CANCEL
+        order_status: CANCELED
         client_oid: MKT_ASK_3

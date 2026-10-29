@@ -14,7 +14,7 @@ events:
   # FOK buy against ask 102/10
   # ============================================================
 
-  # 15 > 10 available → REJECT, and nothing is taken
+  # 15 > 10 available → CANCEL, and nothing is taken
   - type: submit_order
     order:
       side: Bid
@@ -24,8 +24,8 @@ events:
       order_type: LIMIT
       tif: FOK
     expected_reports:
-      - exec_type: REJECT
-        order_status: REJECTED
+      - exec_type: CANCEL
+        order_status: CANCELED
         client_oid: FOK_BID_1
 
   # 6 of the full 10 → FILL
@@ -45,7 +45,7 @@ events:
         leaves_qty: 0
         cumulative_qty: 6
 
-  # 5 > the 4 left → REJECT
+  # 5 > the 4 left → CANCEL
   - type: submit_order
     order:
       side: Bid
@@ -55,8 +55,8 @@ events:
       order_type: LIMIT
       tif: FOK
     expected_reports:
-      - exec_type: REJECT
-        order_status: REJECTED
+      - exec_type: CANCEL
+        order_status: CANCELED
         client_oid: FOK_BID_3
 
   # Exactly the 4 left → FILL
@@ -80,7 +80,7 @@ events:
   # FOK sell against bid 98/8
   # ============================================================
 
-  # 12 > 8 available → REJECT, and nothing is taken
+  # 12 > 8 available → CANCEL, and nothing is taken
   - type: submit_order
     order:
       side: Ask
@@ -90,8 +90,8 @@ events:
       order_type: LIMIT
       tif: FOK
     expected_reports:
-      - exec_type: REJECT
-        order_status: REJECTED
+      - exec_type: CANCEL
+        order_status: CANCELED
         client_oid: FOK_ASK_1
 
   # 5 of the full 8 → FILL
@@ -111,7 +111,7 @@ events:
         leaves_qty: 0
         cumulative_qty: 5
 
-  # 4 > the 3 left → REJECT
+  # 4 > the 3 left → CANCEL
   - type: submit_order
     order:
       side: Ask
@@ -121,8 +121,8 @@ events:
       order_type: LIMIT
       tif: FOK
     expected_reports:
-      - exec_type: REJECT
-        order_status: REJECTED
+      - exec_type: CANCEL
+        order_status: CANCELED
         client_oid: FOK_ASK_3
 
   # Exactly the 3 left → FILL
