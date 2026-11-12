@@ -21,7 +21,7 @@ public final class RewardAccrual {
     private final int[] listingIds;
     private final double[] gross = new double[LISTINGS];
     private final double[] shareNanos = new double[LISTINGS];
-    private final IncentiveProgram latest;
+    private IncentiveProgram latest;
     double countingNanos;
     double oneSidedNanos;
     double depthUnknownNanos;
@@ -38,6 +38,10 @@ public final class RewardAccrual {
         this.rule = rule;
         this.listingIds = listingIds;
         this.latest = latest;
+    }
+
+    void latest(final IncentiveProgram version) {
+        this.latest = version;
     }
 
     void add(final int slot, final double shareTime, final double reward) {

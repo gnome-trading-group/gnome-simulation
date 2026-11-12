@@ -266,6 +266,75 @@ class RewardScorerTest {
         assertEquals(5000 * SECOND, accrual.countingNanos());
     }
 
+    private static IncentiveProgram named(
+            final String id, final long start, final long end, final long reward, final long effectiveFrom) {
+        return new IncentiveProgram(
+                id,
+                IncentiveProgram.IncentiveKind.LIQUIDITY,
+                "M",
+                start,
+                end,
+                reward,
+                IncentiveProgram.RewardPer.PERIOD,
+                JsonNodeFactory.instance.objectNode().put("targetSize", 1000.0).put("discountFactor", 1.0),
+                false,
+                effectiveFrom);
+    }
+
+    private static IncentiveTimeline programs(final IncentiveProgram[]... programs) {
+        return new IncentiveTimeline(List.of(programs));
+    }
+
+    @Test
+    void reloadedProgramsKeepWhatTheyAccruedAndNewOnesStartFromThen() {
+        final RewardScorer scorer = scorer(example(), true, false);
+        book(scorer, YES, T0, BIDS, ASKS);
+        scorer.onOrder(YES, 1, true, 51 * CENT, 500 * CONTRACT, T0);
+        scorer.advanceTo(T0 + PERIOD / 2);
+
+        // The same program, now known to pay $300 from halfway, and a new one running the same period.
+        scorer.setPrograms(
+                YES,
+                programs(
+                        new IncentiveProgram[] {
+                            named("k1", T0, T0 + PERIOD, 100 * DOLLAR, T0),
+                            named("k1", T0, T0 + PERIOD, 300 * DOLLAR, T0 + PERIOD / 2)
+                        },
+                        new IncentiveProgram[] {named("k2", T0, T0 + PERIOD, 100 * DOLLAR, T0)}));
+        scorer.advanceTo(T0 + PERIOD);
+
+        assertEquals(2, scorer.accrualCount());
+        // k1: 20% of one side, $100 ÷ 2 × 0.2 for the first half and $300 ÷ 2 × 0.2 for the second.
+        assertEquals(20 * DOLLAR, scorer.accrual(0).gross(RewardAccrual.PLAIN), 1);
+        assertEquals(300 * DOLLAR, scorer.accrual(0).program().reward());
+        // k2 only from the reload: $100 ÷ 2 × 0.2 × 0.5.
+        assertEquals(5 * DOLLAR, scorer.accrual(1).gross(RewardAccrual.PLAIN), 1);
+    }
+
+    @Test
+    void aReloadDoesNotAddProgramsThatHaveAlreadyEnded() {
+        final RewardScorer scorer = scorer(example(), true, false);
+        scorer.advanceTo(T0 + PERIOD + SECOND);
+        scorer.setPrograms(YES, programs(new IncentiveProgram[] {named("old", T0, T0 + PERIOD, DOLLAR, T0)}));
+
+        assertEquals(1, scorer.accrualCount());
+    }
+
+    @Test
+    void endedProgramsAreRetiredOnceRead() {
+        final RewardScorer scorer = scorer(example(), true, false);
+        scorer.setPrograms(
+                YES,
+                programs(
+                        new IncentiveProgram[] {named("k1", T0, T0 + PERIOD, 100 * DOLLAR, T0)},
+                        new IncentiveProgram[] {named("later", T0, T0 + 2 * PERIOD, 100 * DOLLAR, T0)}));
+        scorer.advanceTo(T0 + PERIOD + SECOND);
+
+        assertEquals(1, scorer.retireEndedBefore(T0 + PERIOD + SECOND));
+        assertEquals(1, scorer.accrualCount());
+        assertEquals("later", scorer.accrual(0).venueProgramId());
+    }
+
     @Test
     void anEventStampedInThePastIsTakenAtTheLatestTime() {
         final RewardScorer scorer = scorer(example(), true, false);

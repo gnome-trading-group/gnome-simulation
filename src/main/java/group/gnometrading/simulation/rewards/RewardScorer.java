@@ -102,6 +102,61 @@ public final class RewardScorer {
         this.listings.put(listingId, new Binding(market, complement));
     }
 
+    /**
+     * Replaces the programs of a bound listing's market with those now known, as a session reloads them. A program it
+     * already had keeps what it accrued and takes its new versions from now on; a new one starts accruing from now; one
+     * whose period has already ended isn't added. Allocates, so call it off the hot path.
+     */
+    public void setPrograms(final int listingId, final IncentiveTimeline timeline) {
+        final Binding binding = this.listings.get(listingId);
+        if (binding == null) {
+            throw new IllegalArgumentException("Listing " + listingId + " is not bound");
+        }
+        final Market market = binding.market;
+        integrate(market, this.clock);
+        final List<Program> programs = new ArrayList<>(List.of(market.programs));
+        for (int i = 0; i < timeline.size(); i++) {
+            final IncentiveProgram[] versions = versions(timeline, i);
+            final String id = versions[versions.length - 1].venueProgramId();
+            final Program existing = programs.stream()
+                    .filter(p -> p.accrual.venueProgramId().equals(id))
+                    .findFirst()
+                    .orElse(null);
+            if (existing != null) {
+                existing.update(market.rule, versions);
+            } else if (versions[versions.length - 1].periodEndNanos() > this.clock) {
+                final Program added = new Program(market, market.rule, versions);
+                programs.add(added);
+                this.accruals.add(added.accrual);
+            }
+        }
+        market.programs = programs.toArray(Program[]::new);
+    }
+
+    /**
+     * Drops every program whose period ended at or before {@code nanos}, once its final totals have been read, so a
+     * long-running scorer holds only live programs. Returns how many were dropped. Allocates.
+     */
+    public int retireEndedBefore(final long nanos) {
+        int retired = 0;
+        for (int m = 0; m < this.markets.size(); m++) {
+            final Market market = this.markets.get(m);
+            final List<Program> kept = new ArrayList<>(market.programs.length);
+            for (final Program program : market.programs) {
+                if (program.periodEnd() <= nanos) {
+                    this.accruals.remove(program.accrual);
+                    retired++;
+                } else {
+                    kept.add(program);
+                }
+            }
+            if (kept.size() != market.programs.length) {
+                market.programs = kept.toArray(Program[]::new);
+            }
+        }
+        return retired;
+    }
+
     /** A program's versions in effective order, read back from the latest one. */
     private static IncentiveProgram[] versions(final IncentiveTimeline timeline, final int index) {
         final List<IncentiveProgram> versions = new ArrayList<>();
@@ -147,6 +202,11 @@ public final class RewardScorer {
 
     /** {@link #onBook} from a recorded MBP-10 book, at its event time. */
     public void onBook(final int listingId, final Mbp10Decoder book) {
+        onBook(listingId, book.timestampEvent(), book);
+    }
+
+    /** {@link #onBook} from an MBP-10 book, at {@code timestampNanos} (a session takes each book when it arrived). */
+    public void onBook(final int listingId, final long timestampNanos, final Mbp10Decoder book) {
         final long nullPrice = Mbp10Decoder.priceNullValue();
         final long nullSize = Mbp10Decoder.sizeNullValue();
         level(0, book.bidPrice0(), book.bidSize0(), book.askPrice0(), book.askSize0(), nullPrice, nullSize);
@@ -159,7 +219,7 @@ public final class RewardScorer {
         level(7, book.bidPrice7(), book.bidSize7(), book.askPrice7(), book.askSize7(), nullPrice, nullSize);
         level(8, book.bidPrice8(), book.bidSize8(), book.askPrice8(), book.askSize8(), nullPrice, nullSize);
         level(9, book.bidPrice9(), book.bidSize9(), book.askPrice9(), book.askSize9(), nullPrice, nullSize);
-        onBook(listingId, book.timestampEvent(), this.bidPrices, this.bidSizes, this.askPrices, this.askSizes);
+        onBook(listingId, timestampNanos, this.bidPrices, this.bidSizes, this.askPrices, this.askSizes);
     }
 
     private void level(
@@ -363,21 +423,31 @@ public final class RewardScorer {
     }
 
     private static final class Program {
-        final IncentiveProgram[] versions;
-        final Object[] terms;
-        final double[] rewardPerShareNano;
+        IncentiveProgram[] versions;
+        Object[] terms;
+        double[] rewardPerShareNano;
         final RewardAccrual accrual;
 
         Program(final Market market, final LiquidityRule rule, final IncentiveProgram[] versions) {
-            this.versions = versions;
-            this.terms = new Object[versions.length];
-            this.rewardPerShareNano = new double[versions.length];
-            for (int i = 0; i < versions.length; i++) {
-                this.terms[i] = rule.terms(versions[i]);
-                this.rewardPerShareNano[i] = rule.rewardPerShareNano(versions[i]);
-            }
             final IncentiveProgram latest = versions[versions.length - 1];
             this.accrual = new RewardAccrual(market.key, latest.venueProgramId(), rule, market.listingIds, latest);
+            update(rule, versions);
+        }
+
+        /** The program's versions as now known; what it accrued so far stays. */
+        void update(final LiquidityRule rule, final IncentiveProgram[] newVersions) {
+            this.versions = newVersions;
+            this.terms = new Object[newVersions.length];
+            this.rewardPerShareNano = new double[newVersions.length];
+            for (int i = 0; i < newVersions.length; i++) {
+                this.terms[i] = rule.terms(newVersions[i]);
+                this.rewardPerShareNano[i] = rule.rewardPerShareNano(newVersions[i]);
+            }
+            this.accrual.latest(newVersions[newVersions.length - 1]);
+        }
+
+        long periodEnd() {
+            return this.versions[this.versions.length - 1].periodEndNanos();
         }
     }
 
