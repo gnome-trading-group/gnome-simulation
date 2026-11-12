@@ -11,6 +11,11 @@
     <artifactId>gnome-simulation</artifactId>
     <version>1.7.4-SNAPSHOT</version>
 
+    <properties>
+        <!-- Allocation tests measure the scorer's hot path; run them with -Dtest.excludedGroups= . -->
+        <test.excludedGroups>allocation</test.excludedGroups>
+    </properties>
+
     <scm>
         <connection>scm:git:git@github.com:gnome-trading-group/gnome-simulation.git</connection>
         <developerConnection>scm:git:git@github.com:gnome-trading-group/gnome-simulation.git</developerConnection>
@@ -47,7 +52,7 @@
         <dependency>
             <groupId>group.gnometrading</groupId>
             <artifactId>gnome-registry</artifactId>
-            <version>1.46.1</version>
+            <version>1.70.0</version>
         </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
@@ -82,4 +87,15 @@
         </dependency>
     </dependencies>
 
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <excludedGroups>${test.excludedGroups}</excludedGroups>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 </project>

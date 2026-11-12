@@ -1,0 +1,44 @@
+[
+ {
+  "ticker": "KXRT-HUN-72",
+  "start": "2026-11-11T05:00:00Z",
+  "end": "2026-11-12T05:00:00Z",
+  "periodReward": 1000000,
+  "targetSize": 1000.0,
+  "discountFactor": 0.5,
+  "records": 6415,
+  "levelJoin500": 15.4651063614079,
+  "queueJoin500": 9.301300203863512,
+  "levelValidFraction": 0.5100256481490754,
+  "oneSidedFraction": 0.0,
+  "depthUnknownFraction": 0.0015122453840794386
+ },
+ {
+  "ticker": "KXRT-FOC-70",
+  "start": "2026-11-11T05:00:00Z",
+  "end": "2026-11-12T05:00:00Z",
+  "periodReward": 1000000,
+  "targetSize": 1000.0,
+  "discountFactor": 0.5,
+  "records": 6434,
+  "levelJoin500": 33.203467515946926,
+  "queueJoin500": 21.751165416414985,
+  "levelValidFraction": 1.0,
+  "oneSidedFraction": 0.0,
+  "depthUnknownFraction": 0.0
+ },
+ {
+  "ticker": "KXRT-HOWT-80",
+  "start": "2026-11-11T05:00:00Z",
+  "end": "2026-11-12T05:00:00Z",
+  "periodReward": 1000000,
+  "targetSize": 1000.0,
+  "discountFactor": 0.5,
+  "records": 5257,
+  "levelJoin500": 0.16478903625524113,
+  "queueJoin500": 0.0,
+  "levelValidFraction": 0.3849903819434069,
+  "oneSidedFraction": 0.6150096180565932,
+  "depthUnknownFraction": 0.0
+ }
+]
