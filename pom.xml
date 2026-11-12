@@ -9,7 +9,7 @@
     </parent>
 
     <artifactId>gnome-simulation</artifactId>
-    <version>1.8.2</version>
+    <version>1.8.3-SNAPSHOT</version>
 
     <properties>
         <!-- Allocation tests measure the scorer's hot path; run them with -Dtest.excludedGroups= . -->
@@ -19,7 +19,7 @@
     <scm>
         <connection>scm:git:git@github.com:gnome-trading-group/gnome-simulation.git</connection>
         <developerConnection>scm:git:git@github.com:gnome-trading-group/gnome-simulation.git</developerConnection>
-        <tag>gnome-simulation-1.8.2</tag>
+        <tag>HEAD</tag>
     </scm>
 
     <distributionManagement>
