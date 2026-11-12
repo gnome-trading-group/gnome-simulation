@@ -260,6 +260,20 @@ public final class RewardScorer {
         binding.market.gap = true;
     }
 
+    /**
+     * Starts every bound market's clock at {@code timestampNanos}: time before it isn't scored, not even as no data,
+     * as before a backtest's start. Call after binding and before the first event.
+     */
+    public void beginAt(final long timestampNanos) {
+        final long now = tick(timestampNanos);
+        for (int i = 0; i < this.markets.size(); i++) {
+            final Market market = this.markets.get(i);
+            if (market.lastNanos < now) {
+                market.lastNanos = now;
+            }
+        }
+    }
+
     /** Integrates every market up to {@code timestampNanos} without a new event. */
     public void advanceTo(final long timestampNanos) {
         final long now = tick(timestampNanos);

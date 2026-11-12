@@ -6,6 +6,7 @@ import group.gnometrading.schemas.Order;
 import group.gnometrading.schemas.OrderExecutionReport;
 import group.gnometrading.schemas.RecordType;
 import group.gnometrading.schemas.StreamRecord;
+import group.gnometrading.simulation.book.LocalOrder;
 import java.util.List;
 
 /**
@@ -31,6 +32,14 @@ public interface SimulatedExchange {
     List<OrderExecutionReport> onMarketData(StreamRecord data);
 
     long simulateNetworkLatency();
+
+    /**
+     * One of our orders as it rests on the simulated book now (its order carries the current price and side), or null
+     * when it isn't resting. An exchange that doesn't track resting orders returns null.
+     */
+    default LocalOrder restingOrder(long clientOidCounter) {
+        return null;
+    }
 
     List<RecordType> getSupportedSchemas();
 }

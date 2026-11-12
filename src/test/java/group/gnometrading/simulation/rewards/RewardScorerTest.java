@@ -255,6 +255,18 @@ class RewardScorerTest {
     }
 
     @Test
+    void timeBeforeTheScorerBeganIsNotScoredAtAll() {
+        final RewardScorer scorer = scorer(example(), true, false);
+        scorer.beginAt(T0 + 4000 * SECOND);
+        book(scorer, YES, T0 + 5000 * SECOND, BIDS, ASKS);
+        scorer.advanceTo(T0 + PERIOD);
+
+        final RewardAccrual accrual = only(scorer);
+        assertEquals(1000 * SECOND, accrual.noDataNanos());
+        assertEquals(5000 * SECOND, accrual.countingNanos());
+    }
+
+    @Test
     void anEventStampedInThePastIsTakenAtTheLatestTime() {
         final RewardScorer scorer = scorer(example(), true, false);
         book(scorer, YES, T0, BIDS, ASKS);

@@ -351,6 +351,11 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
     }
 
     @Override
+    public LocalOrder restingOrder(long clientOidCounter) {
+        return orderBook.findLocalOrder(clientOidCounter);
+    }
+
+    @Override
     public long simulateNetworkLatency() {
         return networkLatency.simulate();
     }
