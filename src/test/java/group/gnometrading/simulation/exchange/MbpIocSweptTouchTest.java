@@ -20,11 +20,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * Paper session f1cb2ef8 (2026-10-29, Hyperliquid BTC), journal seq 334-364: the OMS sends a market buy as an IOC
- * limit at the ask it last saw (no MARKET_ORDER_SLIPPAGE, so exactly the touch). Hyperliquid's book snapshots lag its
- * trades, and by the time order 40 arrives trades have taken the whole 80063 ask the snapshot still shows. The paper
- * exchange matches nothing. It used to answer REJECT with no reason, which the strategy printed as reason=UNKNOWN (70
- * of the session's 74 take rejects); now it cancels the order unfilled, as the venue does and the live gateways report.
+ * A market buy sent as an IOC limit at the last snapshot's ask, after trades have taken that whole level: the books
+ * lag the trades (as Hyperliquid's do), so the touch the OMS priced at is gone, and the exchange matches nothing. It
+ * cancels the order unfilled, as a venue does and the live gateways report, not a REJECT with no reason. Prices and
+ * sizes are from a recorded Hyperliquid BTC book.
  */
 class MbpIocSweptTouchTest {
 
@@ -43,10 +42,10 @@ class MbpIocSweptTouchTest {
                 new StaticLatency(0),
                 new RiskAverseQueueModel(),
                 SelfTradePrevention.CANCEL_INCOMING);
-        // Journal seq 334.
+        // The snapshot: 510 offered at 80063.
         exchange.onMarketData(makeTwoLevelUpdate(
                 80_062 * DOLLAR, 15_265_620, 80_063 * DOLLAR, 510, 80_061 * DOLLAR, 507_320, 80_065 * DOLLAR, 834_840));
-        // Journal seq 339: order 38, a market buy, takes 130 of the 510 at 80063.
+        // An earlier market buy takes 130 of the 510 at 80063.
         assertEquals(ExecType.FILL, buyAtTouch(38).get(0).decoder.execType());
     }
 
@@ -67,7 +66,7 @@ class MbpIocSweptTouchTest {
         assertEquals(0, report.decoder.leavesQty());
     }
 
-    /** Journal seq 349-360: buyers take all 510 at 80063, then trade at 80065; no new snapshot until seq 369. */
+    /** Buyers take what is left at 80063, then trade at 80065, all before the next snapshot. */
     private void sweepTheTouch() {
         exchange.onMarketData(makeTrade(BUYER, 80_063 * DOLLAR, 170));
         exchange.onMarketData(makeTrade(BUYER, 80_063 * DOLLAR, 170));

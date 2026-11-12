@@ -10,8 +10,10 @@ import group.gnometrading.schemas.Order;
 import group.gnometrading.schemas.OrderExecutionReport;
 import group.gnometrading.schemas.OrderStatus;
 import group.gnometrading.schemas.OrderType;
+import group.gnometrading.schemas.SbeMessage;
 import group.gnometrading.schemas.Side;
 import group.gnometrading.schemas.Statics;
+import group.gnometrading.schemas.StreamHeader;
 import group.gnometrading.schemas.TimeInForce;
 import group.gnometrading.schemas.book.Action;
 import group.gnometrading.schemas.book.Mbp10Decoder;
@@ -290,6 +292,33 @@ class MBPMarketDataTest {
         assertEquals(OrderStatus.PARTIALLY_FILLED, report.decoder.orderStatus());
         assertEquals(3, report.decoder.filledQty());
         assertEquals(17, report.decoder.leavesQty());
+    }
+
+    /** Flags a record bad, as a session's or gateway's shard reader does for a stream it stopped trusting. */
+    static void markBad(Mbp10Schema schema) {
+        final int flags = SbeMessage.HEADER_LENGTH + StreamHeader.FLAGS_OFFSET;
+        schema.buffer.putByte(flags, (byte) (schema.buffer.getByte(flags) | (1 << StreamHeader.BAD_DATA_BIT)));
+    }
+
+    @Test
+    void aRecordFlaggedBadFillsNothingAndLeavesTheBook_TheNextCleanOneDoes() {
+        exchange.onMarketData(makeSingleLevelUpdate(100, 10, 102, 40));
+        Order bidOrder = makeOrder(100, 5, Side.Bid, 1L, OrderType.LIMIT, TimeInForce.GOOD_TILL_CANCELED);
+        Immediate.submit(exchange, bidOrder);
+
+        Mbp10Schema badTrade = makeTrade(group.gnometrading.schemas.book.Side.Ask, 100, 20);
+        markBad(badTrade);
+        assertTrue(badTrade.isBadData());
+        assertTrue(exchange.onMarketData(badTrade).isEmpty(), "a bad record's trade fills nothing");
+        Mbp10Schema badBook = makeSingleLevelUpdate(98, 10, 99, 40);
+        markBad(badBook);
+        assertTrue(exchange.onMarketData(badBook).isEmpty(), "a bad record's ask through our bid fills nothing");
+
+        List<OrderExecutionReport> reports =
+                exchange.onMarketData(makeTrade(group.gnometrading.schemas.book.Side.Ask, 100, 20));
+        assertFalse(reports.isEmpty(), "the book stood as it was: a clean trade at our bid fills it");
+        assertEquals(1L, reports.get(0).getClientOidCounter());
+        assertEquals(OrderStatus.FILLED, reports.get(0).decoder.orderStatus());
     }
 
     @Test

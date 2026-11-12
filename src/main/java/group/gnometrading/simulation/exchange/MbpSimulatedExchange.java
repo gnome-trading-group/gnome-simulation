@@ -82,14 +82,20 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
         this.selfTradePrevention = selfTradePrevention;
     }
 
+    /**
+     * A record flagged bad (a gap, a resync, a lost or silent stream) may not reflect the venue, so it moves the clock but
+     * neither changes the book nor fills anything: matching against it could fill an order the venue never would. The
+     * book stands as it was, resting orders included, until a clean record replaces it (each carries the whole top of
+     * the book).
+     */
     @Override
     public List<OrderExecutionReport> onMarketData(StreamRecord data) {
         if (data instanceof Mbp10Schema mbp10) {
             advanceTo(mbp10.decoder.timestampEvent());
-            return onMbp10(mbp10);
+            return mbp10.isBadData() ? List.of() : onMbp10(mbp10);
         } else if (data instanceof Mbp1Schema mbp1) {
             advanceTo(mbp1.decoder.timestampEvent());
-            return onMbp1(mbp1);
+            return mbp1.isBadData() ? List.of() : onMbp1(mbp1);
         }
         throw new IllegalArgumentException("Unsupported schema type: " + data.recordType);
     }
@@ -606,7 +612,7 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
     /**
      * An order that ends without filling or resting: a market take, IOC or FOK with nothing to match at its price, or
      * one self-trade prevention stopped. The venues cancel such an order, and the live gateways report that as a
-     * CANCEL, so paper does too; a REJECT here read as a refusal with no reason (paper session 2026-10-29).
+     * CANCEL, so paper does too; a REJECT here read as a refusal with no reason.
      */
     private OrderExecutionReport unfilled(Order order) {
         return report(order, ExecType.CANCEL, OrderStatus.CANCELED, 0, 0, 0, 0, 0);
