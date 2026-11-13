@@ -19,6 +19,7 @@ import group.gnometrading.schemas.book.Action;
 import group.gnometrading.schemas.book.Mbp10Decoder;
 import group.gnometrading.simulation.book.LocalOrder;
 import group.gnometrading.simulation.book.OrderBookLevel;
+import group.gnometrading.simulation.book.PriceLadder;
 import group.gnometrading.simulation.book.SelfTradePrevention;
 import group.gnometrading.simulation.latency.LatencyModel;
 import group.gnometrading.simulation.latency.LogNormalLatency;
@@ -37,7 +38,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
-import java.util.TreeMap;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -584,12 +584,12 @@ class MbpExchangeInvariantTest {
 
         private void checkBook() throws Exception {
             Object book = field(exchange, "orderBook");
-            TreeMap<Long, OrderBookLevel> bids = call(book, "bids");
-            TreeMap<Long, OrderBookLevel> asks = call(book, "asks");
+            PriceLadder bids = call(book, "bids");
+            PriceLadder asks = call(book, "asks");
             Map<Long, LocalOrder> localBids = call(book, "localBidOrders");
             Map<Long, LocalOrder> localAsks = call(book, "localAskOrders");
-            checkSide(bids, localBids, "bid");
-            checkSide(asks, localAsks, "ask");
+            checkSide(bids, localBids, "bid", true);
+            checkSide(asks, localAsks, "ask", false);
 
             long bestOwnBid = localBids.values().stream()
                     .mapToLong(lo -> lo.order.decoder.price())
@@ -604,20 +604,26 @@ class MbpExchangeInvariantTest {
             }
         }
 
-        private void checkSide(TreeMap<Long, OrderBookLevel> levels, Map<Long, LocalOrder> locals, String side) {
+        private void checkSide(PriceLadder levels, Map<Long, LocalOrder> locals, String side, boolean descending) {
             int inLevels = 0;
-            for (Map.Entry<Long, OrderBookLevel> entry : levels.entrySet()) {
-                OrderBookLevel level = entry.getValue();
+            for (int i = 0; i < levels.size(); i++) {
+                long price = levels.priceAt(i);
+                OrderBookLevel level = levels.levelAt(i);
+                if (i > 0 && (descending ? levels.priceAt(i - 1) <= price : levels.priceAt(i - 1) >= price)) {
+                    fail(ctx(side + " levels out of order at " + price));
+                }
+                if (level.price != price) {
+                    fail(ctx(side + " level at " + price + " says its price is " + level.price));
+                }
                 if (level.size < 0 || level.consumed < 0) {
-                    fail(ctx(
-                            side + " level " + entry.getKey() + " size=" + level.size + " consumed=" + level.consumed));
+                    fail(ctx(side + " level " + price + " size=" + level.size + " consumed=" + level.consumed));
                 }
                 for (LocalOrder lo : level.localOrders) {
                     inLevels++;
                     long oid = lo.order.getClientOidCounter();
-                    if (lo.remaining <= 0 || lo.phantomVolume < 0 || lo.order.decoder.price() != entry.getKey()) {
+                    if (lo.remaining <= 0 || lo.phantomVolume < 0 || lo.order.decoder.price() != price) {
                         fail(ctx(side + " order " + oid + " remaining=" + lo.remaining + " phantom=" + lo.phantomVolume
-                                + " price=" + lo.order.decoder.price() + " at level " + entry.getKey()));
+                                + " price=" + lo.order.decoder.price() + " at level " + price));
                     }
                     if (locals.get(oid) != lo) {
                         fail(ctx(side + " order " + oid + " is on a level but not in the order map"));

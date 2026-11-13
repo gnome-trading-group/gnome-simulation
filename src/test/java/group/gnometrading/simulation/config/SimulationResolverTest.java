@@ -5,6 +5,7 @@ import static org.mockito.Mockito.*;
 
 import group.gnometrading.SecurityMaster;
 import group.gnometrading.simulation.book.SelfTradePrevention;
+import group.gnometrading.simulation.book.TradePairing;
 import group.gnometrading.sm.Exchange;
 import group.gnometrading.sm.Listing;
 import group.gnometrading.sm.SimulationParameters;
@@ -98,6 +99,27 @@ class SimulationResolverTest {
     void feesAreReadAsKnownAtThePinnedTime() {
         when(securityMaster.getFeeTimeline(7, AS_OF)).thenReturn(FeeTimeline.EMPTY);
         assertSame(FeeTimeline.EMPTY, resolver.registryFees().apply(7));
+    }
+
+    @Test
+    void theVenueDecidesHowTradesPairWithBookChanges() {
+        assertEquals(
+                TradePairing.SAME_TIMESTAMP,
+                resolver.resolve(kalshiListing, true).tradePairing());
+        SimulationOverrides everything = SimulationOverrides.fromJson(KALSHI_PARAMETERS);
+        assertEquals(
+                TradePairing.OFF,
+                resolver.resolve(binanceListing, true, everything).tradePairing());
+    }
+
+    @Test
+    void theRunMetadataSaysHowTradesWerePaired() {
+        String kalshi = resolver.resolve(kalshiListing, true).toJson();
+        assertTrue(
+                kalshi.contains("\"trade_pairing\":{\"enabled\":true,\"earlier_nanos\":0,\"later_nanos\":0}"), kalshi);
+        SimulationOverrides everything = SimulationOverrides.fromJson(KALSHI_PARAMETERS);
+        String binance = resolver.resolve(binanceListing, true, everything).toJson();
+        assertTrue(binance.contains("\"trade_pairing\":{\"enabled\":false}"), binance);
     }
 
     @Test

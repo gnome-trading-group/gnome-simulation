@@ -17,13 +17,14 @@ import group.gnometrading.schemas.StreamRecord;
 import group.gnometrading.schemas.TimeInForce;
 import group.gnometrading.schemas.book.Action;
 import group.gnometrading.schemas.book.Mbp10Decoder;
-import group.gnometrading.simulation.book.BidAskLevel;
+import group.gnometrading.simulation.book.BookSnapshot;
 import group.gnometrading.simulation.book.LocalOrder;
 import group.gnometrading.simulation.book.LocalOrderFill;
 import group.gnometrading.simulation.book.MatchPlan;
 import group.gnometrading.simulation.book.MbpBook;
 import group.gnometrading.simulation.book.OrderMatch;
 import group.gnometrading.simulation.book.SelfTradePrevention;
+import group.gnometrading.simulation.book.TradePairing;
 import group.gnometrading.simulation.fee.FeeModel;
 import group.gnometrading.simulation.latency.LatencyModel;
 import group.gnometrading.simulation.queues.QueueModel;
@@ -40,7 +41,6 @@ import java.util.concurrent.atomic.AtomicLong;
 
 public final class MbpSimulatedExchange implements SimulatedExchange {
 
-    private static final long PRICE_NULL = Mbp10Decoder.priceNullValue();
     private static final long SIZE_NULL = Mbp10Decoder.sizeNullValue();
     private static final int MBP10_DEPTH = 10;
     private static final int MBP1_DEPTH = 1;
@@ -58,6 +58,8 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
     private final Set<Long> pendingOrders = new HashSet<>();
     // Each live order's fee rounding carried from fill to fill, by client OID; dropped once the order is done.
     private final Map<Long, OrderFeeState> feeStates = new HashMap<>();
+    // Refilled from each book record, so reading one allocates nothing.
+    private final BookSnapshot snapshot = new BookSnapshot(MBP10_DEPTH);
     // The simulated time fills are priced at: the market data or the held message being processed.
     private long nowNanos;
 
@@ -75,10 +77,21 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
             LatencyModel orderProcessingLatency,
             QueueModel queueModel,
             SelfTradePrevention selfTradePrevention) {
+        this(feeModel, networkLatency, orderProcessingLatency, queueModel, selfTradePrevention, TradePairing.OFF);
+    }
+
+    /** {@code tradePairing} is how this venue's recorded feed orders a trade against its book change. */
+    public MbpSimulatedExchange(
+            FeeModel feeModel,
+            LatencyModel networkLatency,
+            LatencyModel orderProcessingLatency,
+            QueueModel queueModel,
+            SelfTradePrevention selfTradePrevention,
+            TradePairing tradePairing) {
         this.feeModel = feeModel;
         this.networkLatency = networkLatency;
         this.orderProcessingLatency = orderProcessingLatency;
-        this.orderBook = new MbpBook(queueModel);
+        this.orderBook = new MbpBook(queueModel, tradePairing);
         this.selfTradePrevention = selfTradePrevention;
     }
 
@@ -368,14 +381,15 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
     private List<OrderExecutionReport> onMbp10(Mbp10Schema schema) {
         Action action = schema.decoder.action();
         if (action == Action.Add || action == Action.Cancel || action == Action.Modify) {
-            List<BidAskLevel> levels = extractMbp10Levels(schema);
-            List<LocalOrderFill> fills = orderBook.onMarketUpdate(levels, MBP10_DEPTH);
+            readMbp10Levels(schema);
+            List<LocalOrderFill> fills =
+                    orderBook.onMarketUpdate(snapshot, MBP10_DEPTH, schema.decoder.timestampEvent());
             return mapFillsToReports(fills);
         } else if (action == Action.Trade) {
             long price = schema.decoder.price();
             long size = schema.decoder.size();
             var side = schema.decoder.side();
-            List<LocalOrderFill> fills = orderBook.onTrade(price, size, side);
+            List<LocalOrderFill> fills = orderBook.onTrade(price, size, side, schema.decoder.timestampEvent());
             return mapFillsToReports(fills);
         }
         return List.of();
@@ -384,20 +398,24 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
     private List<OrderExecutionReport> onMbp1(Mbp1Schema schema) {
         Action action = schema.decoder.action();
         if (action == Action.Add || action == Action.Cancel || action == Action.Modify) {
-            List<BidAskLevel> levels = extractMbp1Levels(schema);
-            List<LocalOrderFill> fills = orderBook.onMarketUpdate(levels, MBP1_DEPTH);
+            readMbp1Levels(schema);
+            List<LocalOrderFill> fills =
+                    orderBook.onMarketUpdate(snapshot, MBP1_DEPTH, schema.decoder.timestampEvent());
             return mapFillsToReports(fills);
         } else if (action == Action.Trade) {
             long price = schema.decoder.price();
             long size = schema.decoder.size();
             var side = schema.decoder.side();
-            List<LocalOrderFill> fills = orderBook.onTrade(price, size, side);
+            List<LocalOrderFill> fills = orderBook.onTrade(price, size, side, schema.decoder.timestampEvent());
             return mapFillsToReports(fills);
         }
         return List.of();
     }
 
     private List<OrderExecutionReport> mapFillsToReports(List<LocalOrderFill> fills) {
+        if (fills.isEmpty()) {
+            return List.of();
+        }
         List<OrderExecutionReport> reports = new ArrayList<>(fills.size());
         for (LocalOrderFill fill : fills) {
             reports.add(mapFillToReport(fill.localOrder(), fill.fillSize(), fill.remainingAfterFill()));
@@ -701,36 +719,28 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
         return report;
     }
 
-    private List<BidAskLevel> extractMbp10Levels(Mbp10Schema schema) {
+    private void readMbp10Levels(Mbp10Schema schema) {
         var decoder = schema.decoder;
-        List<BidAskLevel> levels = new ArrayList<>(10);
-        addLevel(levels, decoder.bidPrice0(), decoder.bidSize0(), decoder.askPrice0(), decoder.askSize0());
-        addLevel(levels, decoder.bidPrice1(), decoder.bidSize1(), decoder.askPrice1(), decoder.askSize1());
-        addLevel(levels, decoder.bidPrice2(), decoder.bidSize2(), decoder.askPrice2(), decoder.askSize2());
-        addLevel(levels, decoder.bidPrice3(), decoder.bidSize3(), decoder.askPrice3(), decoder.askSize3());
-        addLevel(levels, decoder.bidPrice4(), decoder.bidSize4(), decoder.askPrice4(), decoder.askSize4());
-        addLevel(levels, decoder.bidPrice5(), decoder.bidSize5(), decoder.askPrice5(), decoder.askSize5());
-        addLevel(levels, decoder.bidPrice6(), decoder.bidSize6(), decoder.askPrice6(), decoder.askSize6());
-        addLevel(levels, decoder.bidPrice7(), decoder.bidSize7(), decoder.askPrice7(), decoder.askSize7());
-        addLevel(levels, decoder.bidPrice8(), decoder.bidSize8(), decoder.askPrice8(), decoder.askSize8());
-        addLevel(levels, decoder.bidPrice9(), decoder.bidSize9(), decoder.askPrice9(), decoder.askSize9());
-        return levels;
+        snapshot.clear();
+        addLevel(decoder.bidPrice0(), decoder.bidSize0(), decoder.askPrice0(), decoder.askSize0());
+        addLevel(decoder.bidPrice1(), decoder.bidSize1(), decoder.askPrice1(), decoder.askSize1());
+        addLevel(decoder.bidPrice2(), decoder.bidSize2(), decoder.askPrice2(), decoder.askSize2());
+        addLevel(decoder.bidPrice3(), decoder.bidSize3(), decoder.askPrice3(), decoder.askSize3());
+        addLevel(decoder.bidPrice4(), decoder.bidSize4(), decoder.askPrice4(), decoder.askSize4());
+        addLevel(decoder.bidPrice5(), decoder.bidSize5(), decoder.askPrice5(), decoder.askSize5());
+        addLevel(decoder.bidPrice6(), decoder.bidSize6(), decoder.askPrice6(), decoder.askSize6());
+        addLevel(decoder.bidPrice7(), decoder.bidSize7(), decoder.askPrice7(), decoder.askSize7());
+        addLevel(decoder.bidPrice8(), decoder.bidSize8(), decoder.askPrice8(), decoder.askSize8());
+        addLevel(decoder.bidPrice9(), decoder.bidSize9(), decoder.askPrice9(), decoder.askSize9());
     }
 
-    private List<BidAskLevel> extractMbp1Levels(Mbp1Schema schema) {
+    private void readMbp1Levels(Mbp1Schema schema) {
         var decoder = schema.decoder;
-        List<BidAskLevel> levels = new ArrayList<>(1);
-        addLevel(levels, decoder.bidPrice0(), decoder.bidSize0(), decoder.askPrice0(), decoder.askSize0());
-        return levels;
+        snapshot.clear();
+        addLevel(decoder.bidPrice0(), decoder.bidSize0(), decoder.askPrice0(), decoder.askSize0());
     }
 
-    private void addLevel(List<BidAskLevel> levels, long bidPx, long bidSz, long askPx, long askSz) {
-        if (bidPx != PRICE_NULL || askPx != PRICE_NULL) {
-            levels.add(new BidAskLevel(
-                    bidPx == PRICE_NULL ? PRICE_NULL : bidPx,
-                    bidSz == SIZE_NULL ? 0 : bidSz,
-                    askPx == PRICE_NULL ? PRICE_NULL : askPx,
-                    askSz == SIZE_NULL ? 0 : askSz));
-        }
+    private void addLevel(long bidPx, long bidSz, long askPx, long askSz) {
+        snapshot.add(bidPx, bidSz == SIZE_NULL ? 0 : bidSz, askPx, askSz == SIZE_NULL ? 0 : askSz);
     }
 }
