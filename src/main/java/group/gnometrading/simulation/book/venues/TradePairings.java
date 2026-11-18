@@ -24,8 +24,13 @@ public final class TradePairings {
     /** The same stamp, or stamped up to about 50 ms after the trade yet delivered before it. */
     private static final TradePairing POLYMARKET_US = TradePairing.within(Duration.ZERO, Duration.ofMillis(50));
 
-    /** Stamped 10-50 ms before the trade; past 50 ms, shrinks of exactly the trade's size fall to chance. */
-    private static final TradePairing POLYMARKET_INTL = TradePairing.within(Duration.ofMillis(50), Duration.ZERO);
+    /**
+     * Mostly stamped 20-40 ms before the trade, a few just after. A window of 100 ms before and 25 ms after pairs 94% of
+     * prints with their shrink while a same-sized shrink falls in it by chance about 5% of the time; widening it further
+     * adds about as much chance as it pairs.
+     */
+    private static final TradePairing POLYMARKET_INTL =
+            TradePairing.within(Duration.ofMillis(100), Duration.ofMillis(25));
 
     private TradePairings() {}
 

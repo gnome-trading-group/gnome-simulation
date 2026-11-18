@@ -31,6 +31,14 @@ public interface SimulatedExchange {
 
     List<OrderExecutionReport> onMarketData(StreamRecord data);
 
+    /**
+     * A trade print from the other outcome of this listing's market, on a venue that matches the two outcomes' orders
+     * against each other but prints the trade once. An exchange that doesn't model that ignores it.
+     */
+    default List<OrderExecutionReport> onComplementTrade(StreamRecord data) {
+        return List.of();
+    }
+
     long simulateNetworkLatency();
 
     /**

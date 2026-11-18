@@ -19,6 +19,9 @@ import java.util.Map;
  * snapshot's shrink beyond that is read as cancels. Some venues' feeds deliver a trade's book change before the trade
  * record, which read that way would charge the trade against the queue twice; {@link TradePairing} says whether and
  * within what venue-time bounds a trade claims an earlier shrink of its level instead.
+ *
+ * <p>A print is read as stopping at its own price, unless the venue prints a taker's whole order at its average price
+ * ({@code sweepingPrints}): then it takes its whole size off the levels in price order, however far past that price.
  */
 public final class MbpBook {
 
@@ -26,15 +29,21 @@ public final class MbpBook {
 
     private final QueueModel queueModel;
     private final TradePairing pairing;
+    private final boolean sweepingPrints;
     // Orders set aside while a trade claims the shrink they joined after; reused so claiming doesn't allocate.
     private final ArrayDeque<LocalOrder> joinedAfterShrink = new ArrayDeque<>();
 
     private final PriceLadder bids = new PriceLadder(true);
     private final PriceLadder asks = new PriceLadder(false);
+    // Levels a book change emptied before the trade that emptied them arrived; only a book that pairs keeps any.
+    private final EmptiedLevels emptiedBids = new EmptiedLevels(true);
+    private final EmptiedLevels emptiedAsks = new EmptiedLevels(false);
 
     // local_orders[side][clientOidCounter] -> LocalOrder
     private final Map<Long, LocalOrder> localBidOrders = new HashMap<>();
     private final Map<Long, LocalOrder> localAskOrders = new HashMap<>();
+    // The next emptied level the trade being applied may claim; a field so walking them doesn't allocate.
+    private int emptiedIndex;
     // The fills of the trade being applied; made only once something fills, as most trades reach none of our orders.
     private List<LocalOrderFill> tradeFills;
 
@@ -43,8 +52,13 @@ public final class MbpBook {
     }
 
     public MbpBook(QueueModel queueModel, TradePairing pairing) {
+        this(queueModel, pairing, false);
+    }
+
+    public MbpBook(QueueModel queueModel, TradePairing pairing, boolean sweepingPrints) {
         this.queueModel = queueModel;
         this.pairing = pairing;
+        this.sweepingPrints = sweepingPrints;
     }
 
     public Long getBestBid() {
@@ -73,6 +87,7 @@ public final class MbpBook {
      * the level is shown again. Returns fills if any local orders were crossed after the update.
      */
     public List<LocalOrderFill> onMarketUpdate(BookSnapshot snapshot, int depth, long venueNanos) {
+        expireEmptied(venueNanos);
         reconcileSide(bids, snapshot, true, depth, venueNanos);
         reconcileSide(asks, snapshot, false, depth, venueNanos);
 
@@ -189,18 +204,23 @@ public final class MbpBook {
         // The trade side is the aggressor side; our local orders are on the opposite side
         boolean tradeIsBid = tradeSide == group.gnometrading.schemas.book.Side.Bid;
         PriceLadder oppBook = tradeIsBid ? asks : bids;
+        EmptiedLevels emptied = tradeIsBid ? emptiedAsks : emptiedBids;
+        expireEmptied(venueNanos);
         tradeFills = null;
 
         long remainingSize = size;
+        emptiedIndex = 0;
         for (int i = 0; i < oppBook.size() && remainingSize > 0; i++) {
             long levelPrice = oppBook.priceAt(i);
-            // For ask levels: stop if ask price > trade price (trade can't reach here)
-            // For bid levels: stop if bid price < trade price
-            if (tradeIsBid ? levelPrice > price : levelPrice < price) {
+            // An emptied level at or before this one is where the trade went first: its book change already showed it.
+            remainingSize = claimEmptied(emptied, remainingSize, true, levelPrice, price, tradeIsBid, venueNanos);
+            // A print at one price can't reach a level beyond it, unless it is an average over levels it swept.
+            if (remainingSize <= 0 || beyond(levelPrice, price, tradeIsBid)) {
                 break;
             }
             remainingSize = tradeAt(oppBook.levelAt(i), remainingSize, venueNanos);
         }
+        claimEmptied(emptied, remainingSize, false, 0, price, tradeIsBid, venueNanos);
 
         List<LocalOrderFill> allFills = tradeFills;
         tradeFills = null;
@@ -209,6 +229,87 @@ public final class MbpBook {
         }
         clearFills(allFills);
         return allFills;
+    }
+
+    /**
+     * Claims emptied levels in price order from {@link #emptiedIndex}, up to {@code levelPrice} when {@code bounded}, as
+     * far as the print reaches; returns the trade's size left.
+     */
+    private long claimEmptied(
+            EmptiedLevels emptied,
+            long size,
+            boolean bounded,
+            long levelPrice,
+            long printPrice,
+            boolean tradeIsBid,
+            long venueNanos) {
+        long remaining = size;
+        while (emptiedIndex < emptied.size()
+                && remaining > 0
+                && (!bounded || emptied.atOrBefore(emptiedIndex, levelPrice))
+                && !beyond(emptied.priceAt(emptiedIndex), printPrice, tradeIsBid)) {
+            int before = emptied.size();
+            remaining = emptied.claim(emptiedIndex, remaining, venueNanos, pairing);
+            if (emptied.size() == before) {
+                emptiedIndex++;
+            }
+        }
+        return remaining;
+    }
+
+    /** Whether a print at {@code printPrice} stops short of {@code levelPrice}: only a sweeping print goes past its price. */
+    private boolean beyond(long levelPrice, long printPrice, boolean tradeIsBid) {
+        return !sweepingPrints && (tradeIsBid ? levelPrice > printPrice : levelPrice < printPrice);
+    }
+
+    private void expireEmptied(long venueNanos) {
+        if (pairing.enabled()) {
+            emptiedBids.expire(venueNanos, pairing);
+            emptiedAsks.expire(venueNanos, pairing);
+        }
+    }
+
+    /**
+     * The level at {@code price}, created when there is none. A level a book change emptied there hands its unclaimed
+     * shrink to it, so a trade still on its way claims it and an order joining now is placed behind it.
+     */
+    private OrderBookLevel levelAt(PriceLadder book, long price) {
+        OrderBookLevel level = book.get(price);
+        if (level == null) {
+            level = book.getOrCreate(price);
+            (book == bids ? emptiedBids : emptiedAsks).handOver(price, level);
+        }
+        return level;
+    }
+
+    /**
+     * Removes the level at {@code price}. When pairing, a shrink it still holds unclaimed moves to the emptied levels:
+     * the trade it came from may not have arrived yet.
+     */
+    /** A level the book no longer shows, emptied at {@code venueNanos}. */
+    private void retire(PriceLadder book, long price, OrderBookLevel level, long venueNanos) {
+        if (!pairing.enabled() || level.size <= 0) {
+            removeLevel(book, price, level);
+            return;
+        }
+        // The shrink that empties it is pending like any other, so the trade behind it claims it at this price. It has
+        // no orders of ours, so only the shrink and its times carry over.
+        long shrink = level.size;
+        long fromNanos = venueNanos;
+        if (level.pendingShrink > 0 && pairing.continues(level.pendingFirstNanos, venueNanos)) {
+            shrink += level.pendingShrink;
+            fromNanos = Math.min(level.pendingFirstNanos, venueNanos);
+        }
+        (book == bids ? emptiedBids : emptiedAsks).record(price, shrink, fromNanos, venueNanos, pairing);
+        book.remove(price);
+    }
+
+    private void removeLevel(PriceLadder book, long price, OrderBookLevel level) {
+        if (pairing.enabled() && level.pendingShrink > 0) {
+            (book == bids ? emptiedBids : emptiedAsks)
+                    .record(price, level.pendingShrink, level.pendingFirstNanos, level.pendingLastNanos, pairing);
+        }
+        book.remove(price);
     }
 
     /** What of a trade reaches {@code level}: a paired shrink first, then our orders, then the market's volume. */
@@ -263,7 +364,7 @@ public final class MbpBook {
             throw new IllegalArgumentException("Duplicate client OID: " + clientOid);
         }
 
-        OrderBookLevel level = book.getOrCreate(price);
+        OrderBookLevel level = levelAt(book, price);
 
         LocalOrder localOrder = new LocalOrder(order, remaining, level.queueOnJoin());
         localOrders.put(clientOid, localOrder);
@@ -294,7 +395,7 @@ public final class MbpBook {
         if (level != null) {
             level.localOrders.remove(localOrder);
             if (level.size == 0 && !level.hasLocalOrders()) {
-                book.remove(price);
+                removeLevel(book, price, level);
             }
         }
         return true;
@@ -334,21 +435,21 @@ public final class MbpBook {
     }
 
     /** A price change loses queue position: the order joins the back of its new level. */
-    private static void moveToPrice(
+    private void moveToPrice(
             PriceLadder book, LocalOrder localOrder, long newPrice, long newOrderQty, long newRemaining) {
         long oldPrice = localOrder.order.decoder.price();
         OrderBookLevel oldLevel = book.get(oldPrice);
         if (oldLevel != null) {
             oldLevel.localOrders.remove(localOrder);
             if (oldLevel.size == 0 && !oldLevel.hasLocalOrders()) {
-                book.remove(oldPrice);
+                removeLevel(book, oldPrice, oldLevel);
             }
         }
 
         localOrder.order.encoder.price(newPrice).size(newOrderQty);
         localOrder.remaining = newRemaining;
 
-        OrderBookLevel newLevel = book.getOrCreate(newPrice);
+        OrderBookLevel newLevel = levelAt(book, newPrice);
         localOrder.phantomVolume = newLevel.queueOnJoin();
         newLevel.join(localOrder);
     }
@@ -504,13 +605,13 @@ public final class MbpBook {
         OrderBookLevel prevLevel = book.get(price);
         if (newSize == 0 && (prevLevel == null || !prevLevel.hasLocalOrders())) {
             if (prevLevel != null) {
-                book.remove(price);
+                retire(book, price, prevLevel, venueNanos);
             }
             return;
         }
         long prevSize = prevLevel != null ? prevLevel.size : 0;
         if (prevLevel == null) {
-            prevLevel = book.getOrCreate(price);
+            prevLevel = levelAt(book, price);
         }
         prevLevel.outOfView = false;
         boolean pending = pairing.enabled() && prevSize > newSize;
@@ -604,7 +705,7 @@ public final class MbpBook {
                 if (level != null) {
                     level.localOrders.remove(lo);
                     if (level.size == 0 && !level.hasLocalOrders()) {
-                        book.remove(price);
+                        removeLevel(book, price, level);
                     }
                 }
             }

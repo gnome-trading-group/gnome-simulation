@@ -28,8 +28,8 @@ class TradePairingsTest {
     }
 
     @Test
-    void polymarketIntlPairsABookChangeStampedUpToFiftyMillisecondsBeforeTheTrade() {
-        assertEquals(new TradePairing(true, 50 * MILLI, 0), of("POLYMARKET_INTL"));
+    void polymarketIntlPairsABookChangeStampedUpToAHundredMillisecondsBeforeOrTwentyFiveAfterTheTrade() {
+        assertEquals(new TradePairing(true, 100 * MILLI, 25 * MILLI), of("POLYMARKET_INTL"));
     }
 
     @Test

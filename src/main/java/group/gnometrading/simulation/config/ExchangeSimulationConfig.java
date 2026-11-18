@@ -12,8 +12,9 @@ import java.util.function.IntFunction;
 
 /**
  * Everything one listing's simulated exchange is built from, resolved by {@link SimulationResolver}. Market data
- * latency is only needed by backtests, so a paper session may resolve without it. {@code tradePairing} comes from the
- * venue, not from the registry's parameters: it describes how the venue's recorded feed is ordered.
+ * latency is only needed by backtests, so a paper session may resolve without it. {@code tradePairing} and
+ * {@code sweepingPrints} come from the venue, not from the registry's parameters: they describe how the venue's
+ * recorded feed is ordered and what its prints stand for.
  */
 public record ExchangeSimulationConfig(
         FeeModelConfig feeModel,
@@ -22,7 +23,8 @@ public record ExchangeSimulationConfig(
         LatencyConfig marketDataLatency,
         QueueModelConfig queueModel,
         SelfTradePrevention selfTradePrevention,
-        TradePairing tradePairing) {
+        TradePairing tradePairing,
+        boolean sweepingPrints) {
 
     /** A venue whose book changes and trades are read separately. */
     public ExchangeSimulationConfig(
@@ -42,6 +44,39 @@ public record ExchangeSimulationConfig(
                 TradePairing.OFF);
     }
 
+    /** A venue whose prints stop at their own price. */
+    public ExchangeSimulationConfig(
+            FeeModelConfig feeModel,
+            LatencyConfig networkLatency,
+            LatencyConfig orderProcessingLatency,
+            LatencyConfig marketDataLatency,
+            QueueModelConfig queueModel,
+            SelfTradePrevention selfTradePrevention,
+            TradePairing tradePairing) {
+        this(
+                feeModel,
+                networkLatency,
+                orderProcessingLatency,
+                marketDataLatency,
+                queueModel,
+                selfTradePrevention,
+                tradePairing,
+                false);
+    }
+
+    /** The same, with prints read as stopping at their own price: how the simulator read every venue before. */
+    public ExchangeSimulationConfig withoutSweepingPrints() {
+        return new ExchangeSimulationConfig(
+                feeModel,
+                networkLatency,
+                orderProcessingLatency,
+                marketDataLatency,
+                queueModel,
+                selfTradePrevention,
+                tradePairing,
+                false);
+    }
+
     /**
      * Builds the exchange with its random latency models seeded from {@code seed}, each with its own stream, unless a
      * model pins its own seed. Pass a different seed per listing so listings don't share latency draws.
@@ -54,7 +89,8 @@ public record ExchangeSimulationConfig(
                 orderProcessingLatency.toModel(LatencySeeds.derive(seed, LatencySeeds.ORDER_PROCESSING_STREAM)),
                 queueModel.toModel(),
                 selfTradePrevention,
-                tradePairing);
+                tradePairing,
+                sweepingPrints);
     }
 
     /** As a config or the registry writes it, for logs and run metadata, with the venue's trade pairing beside it. */
@@ -71,6 +107,7 @@ public record ExchangeSimulationConfig(
         if (tradePairing.enabled()) {
             pairing.put("earlier_nanos", tradePairing.earlierNanos()).put("later_nanos", tradePairing.laterNanos());
         }
+        json.put("sweeping_prints", sweepingPrints);
         try {
             return SimulationOverrides.JSON.writeValueAsString(json);
         } catch (JsonProcessingException e) {

@@ -1,6 +1,7 @@
 package group.gnometrading.simulation.config;
 
 import group.gnometrading.SecurityMaster;
+import group.gnometrading.simulation.book.venues.Complements;
 import group.gnometrading.simulation.book.venues.TradePairings;
 import group.gnometrading.sm.Listing;
 import group.gnometrading.sm.SimulationParameters;
@@ -63,7 +64,8 @@ public final class SimulationResolver {
                 resolved.marketDataLatency,
                 resolved.queueModel,
                 resolved.selfTradePrevention,
-                TradePairings.of(listing));
+                TradePairings.of(listing),
+                Complements.printsSweep(listing));
     }
 
     private static List<String> missingBlocks(SimulationOverrides resolved, boolean needsMarketData) {

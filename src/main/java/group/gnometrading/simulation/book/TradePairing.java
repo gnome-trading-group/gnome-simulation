@@ -46,4 +46,12 @@ public record TradePairing(boolean enabled, long earlierNanos, long laterNanos) 
     public boolean continues(long firstNanos, long shrinkNanos) {
         return Math.abs(shrinkNanos - firstNanos) <= earlierNanos + laterNanos;
     }
+
+    /**
+     * Whether a shrink last stamped {@code lastNanos} is past pairing once the feed has reached {@code nowNanos}: no
+     * trade the feed still delivers can be stamped close enough to it.
+     */
+    public boolean stale(long lastNanos, long nowNanos) {
+        return nowNanos - lastNanos > earlierNanos + laterNanos;
+    }
 }

@@ -138,6 +138,9 @@ final class RecordedKalshiStrike {
             final boolean twoSided = this.bidSize[r][0] > 0 && this.askSize[r][0] > 0;
             scorer.onOrder(1, 1, true, this.bidPrice[r][0], twoSided ? size : 0, at);
             scorer.onOrder(1, 2, false, this.askPrice[r][0], twoSided ? size : 0, at);
+            // Joined at the back: everyone else at the touch is ahead.
+            scorer.onQueueAhead(1, this.bidSize[r][0], at);
+            scorer.onQueueAhead(2, this.askSize[r][0], at);
         }
         scorer.advanceTo(this.end);
     }

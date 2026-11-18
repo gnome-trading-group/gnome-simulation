@@ -13,6 +13,7 @@ import group.gnometrading.schemas.OrderType;
 import group.gnometrading.schemas.RecordType;
 import group.gnometrading.schemas.RejectReason;
 import group.gnometrading.schemas.Side;
+import group.gnometrading.schemas.Statics;
 import group.gnometrading.schemas.StreamRecord;
 import group.gnometrading.schemas.TimeInForce;
 import group.gnometrading.schemas.book.Action;
@@ -88,10 +89,25 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
             QueueModel queueModel,
             SelfTradePrevention selfTradePrevention,
             TradePairing tradePairing) {
+        this(feeModel, networkLatency, orderProcessingLatency, queueModel, selfTradePrevention, tradePairing, false);
+    }
+
+    /**
+     * {@code sweepingPrints}: the venue prints a taker's whole order at its average price, so a print takes its size off
+     * the levels in price order past its own price.
+     */
+    public MbpSimulatedExchange(
+            FeeModel feeModel,
+            LatencyModel networkLatency,
+            LatencyModel orderProcessingLatency,
+            QueueModel queueModel,
+            SelfTradePrevention selfTradePrevention,
+            TradePairing tradePairing,
+            boolean sweepingPrints) {
         this.feeModel = feeModel;
         this.networkLatency = networkLatency;
         this.orderProcessingLatency = orderProcessingLatency;
-        this.orderBook = new MbpBook(queueModel, tradePairing);
+        this.orderBook = new MbpBook(queueModel, tradePairing, sweepingPrints);
         this.selfTradePrevention = selfTradePrevention;
     }
 
@@ -111,6 +127,39 @@ public final class MbpSimulatedExchange implements SimulatedExchange {
             return mbp1.isBadData() ? List.of() : onMbp1(mbp1);
         }
         throw new IllegalArgumentException("Unsupported schema type: " + data.recordType);
+    }
+
+    /**
+     * A print on the other outcome of this listing's market, which this book shows folded in at {@code 1 - price}: a
+     * taker buying the other outcome took our bids at {@code 1 - price} (the pair is minted), a taker selling it took our
+     * asks (the pair is merged). Only trade records count; book records of the other outcome are its own book's.
+     */
+    @Override
+    public List<OrderExecutionReport> onComplementTrade(StreamRecord data) {
+        if (data instanceof Mbp10Schema mbp10) {
+            if (mbp10.isBadData() || mbp10.decoder.action() != Action.Trade) {
+                return List.of();
+            }
+            advanceTo(mbp10.decoder.timestampEvent());
+            return complementTrade(
+                    mbp10.decoder.price(), mbp10.decoder.size(), mbp10.decoder.side(), mbp10.decoder.timestampEvent());
+        } else if (data instanceof Mbp1Schema mbp1) {
+            if (mbp1.isBadData() || mbp1.decoder.action() != Action.Trade) {
+                return List.of();
+            }
+            advanceTo(mbp1.decoder.timestampEvent());
+            return complementTrade(
+                    mbp1.decoder.price(), mbp1.decoder.size(), mbp1.decoder.side(), mbp1.decoder.timestampEvent());
+        }
+        throw new IllegalArgumentException("Unsupported schema type: " + data.recordType);
+    }
+
+    private List<OrderExecutionReport> complementTrade(
+            long price, long size, group.gnometrading.schemas.book.Side side, long venueNanos) {
+        group.gnometrading.schemas.book.Side here = side == group.gnometrading.schemas.book.Side.Bid
+                ? group.gnometrading.schemas.book.Side.Ask
+                : group.gnometrading.schemas.book.Side.Bid;
+        return mapFillsToReports(orderBook.onTrade(Statics.PRICE_SCALING_FACTOR - price, size, here, venueNanos));
     }
 
     @Override

@@ -19,7 +19,12 @@ import group.gnometrading.sm.incentive.IncentiveProgram;
  *       the side's total.
  * </ul>
  *
- * A snapshot counts only when both sides qualify, so a market's snapshot shares sum to 2. The reward is the period's
+ * The terms don't say whether every bid at the level that reaches the target qualifies, or only the bids that reach
+ * it in queue order. Both are scored: the level reading as above, and the queue reading, where that level counts only
+ * the size the target still needs, taken from the front of its queue, so our bids there count only for whatever of it
+ * is left after everyone else's size ahead of them.
+ *
+ * <p>A snapshot counts only when both sides qualify, so a market's snapshot shares sum to 2. The reward is the period's
  * reward times our total share, divided by twice the period's snapshots, rounded down to the cent, and nothing under
  * $1 per market program.
  */
@@ -71,12 +76,15 @@ public final class KalshiLiquidityRule implements LiquidityRule {
         for (int i = 0; i < levels; i++) {
             final double others = side.others(i);
             final double ours = side.ours(i);
+            final double needed = target - cumulative;
+            final double totalBefore = total;
             cumulative += others + ours;
             final double multiplier = i <= reference ? 1.0 : discount(kalshi, referencePrice, side.price(i), tick);
             total += (others + ours) * multiplier;
             out.scoreOurs(i, ours * multiplier);
             if (cumulative >= target) {
-                out.qualify(total);
+                out.crossing(i, needed, multiplier);
+                out.qualify(total, totalBefore + needed * multiplier);
                 return;
             }
         }

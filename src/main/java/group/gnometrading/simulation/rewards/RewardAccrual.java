@@ -20,6 +20,7 @@ public final class RewardAccrual {
     private final LiquidityRule rule;
     private final int[] listingIds;
     private final double[] gross = new double[LISTINGS];
+    private final double[] grossQueue = new double[LISTINGS];
     private final double[] shareNanos = new double[LISTINGS];
     private IncentiveProgram latest;
     double countingNanos;
@@ -44,9 +45,10 @@ public final class RewardAccrual {
         this.latest = version;
     }
 
-    void add(final int slot, final double shareTime, final double reward) {
+    void add(final int slot, final double shareTime, final double reward, final double rewardQueue) {
         this.shareNanos[slot] += shareTime;
         this.gross[slot] += reward;
+        this.grossQueue[slot] += rewardQueue;
     }
 
     public String marketKey() {
@@ -77,9 +79,27 @@ public final class RewardAccrual {
         return (long) (this.gross[PLAIN] + this.gross[COMPLEMENT]);
     }
 
+    /**
+     * {@link #gross(int)} under the queue reading of a venue's rule (see {@link SideScore}): only the orders that
+     * complete a side's requirement in queue order count at the level that completes it.
+     */
+    public long grossQueue(final int slot) {
+        return (long) this.grossQueue[slot];
+    }
+
+    /** {@link #marketGross()} under the queue reading. */
+    public long marketGrossQueue() {
+        return (long) (this.grossQueue[PLAIN] + this.grossQueue[COMPLEMENT]);
+    }
+
     /** What the venue would pay for the market's period at our gross so far. */
     public long marketPaid() {
         return this.rule.close(marketGross());
+    }
+
+    /** {@link #marketPaid()} under the queue reading. */
+    public long marketPaidQueue() {
+        return this.rule.close(marketGrossQueue());
     }
 
     /** Our share of a side, integrated over time: one nanosecond at the whole of one side is 1. */
