@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import group.gnometrading.simulation.rewards.venues.kalshi.KalshiLiquidityRule;
+import group.gnometrading.sm.PriceGrid;
 import group.gnometrading.sm.incentive.IncentiveProgram;
 import group.gnometrading.sm.incentive.IncentiveTimeline;
 import java.io.BufferedReader;
@@ -25,6 +26,7 @@ final class RecordedKalshiStrike {
 
     static final int LEVELS = 10;
     private static final long CENT = 10_000_000L;
+    private static final PriceGrid CENTS = PriceGrid.single(CENT, 100 * CENT);
     private static final long CENTI_CENTS_TO_PRICE = 100_000L;
     private static final String RESOURCES = "/rewards/kalshi/";
 
@@ -122,7 +124,7 @@ final class RecordedKalshiStrike {
     /** A scorer with this strike's YES listing (id 1) bound. */
     RewardScorer scorer() {
         final RewardScorer scorer = new RewardScorer(RewardScorer.Mode.INSERT_OURS, 4, 8);
-        scorer.bind(1, this.ticker, false, new KalshiLiquidityRule(), this.program, nanos -> CENT);
+        scorer.bind(1, this.ticker, false, new KalshiLiquidityRule(), this.program, nanos -> CENTS);
         return scorer;
     }
 
@@ -138,9 +140,6 @@ final class RecordedKalshiStrike {
             final boolean twoSided = this.bidSize[r][0] > 0 && this.askSize[r][0] > 0;
             scorer.onOrder(1, 1, true, this.bidPrice[r][0], twoSided ? size : 0, at);
             scorer.onOrder(1, 2, false, this.askPrice[r][0], twoSided ? size : 0, at);
-            // Joined at the back: everyone else at the touch is ahead.
-            scorer.onQueueAhead(1, this.bidSize[r][0], at);
-            scorer.onQueueAhead(2, this.askSize[r][0], at);
         }
         scorer.advanceTo(this.end);
     }

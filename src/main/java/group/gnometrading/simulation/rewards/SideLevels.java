@@ -26,11 +26,6 @@ public final class SideLevels {
         return this.count;
     }
 
-    /** True for the plain outcome's bids; false for its asks, which are bids for the complement. */
-    public boolean bid() {
-        return this.bid;
-    }
-
     public long price(final int level) {
         return this.price[level];
     }

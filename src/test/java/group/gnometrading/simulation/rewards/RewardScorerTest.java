@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import group.gnometrading.simulation.rewards.venues.kalshi.KalshiLiquidityRule;
+import group.gnometrading.sm.PriceGrid;
 import group.gnometrading.sm.incentive.IncentiveProgram;
 import group.gnometrading.sm.incentive.IncentiveTimeline;
 import java.util.List;
@@ -18,7 +19,17 @@ class RewardScorerTest {
     private static final long CONTRACT = 1_000_000L;
     private static final long T0 = 1_790_000_000L * SECOND;
     private static final long PERIOD = 10_000 * SECOND;
-    private static final TickSize ONE_CENT = nanos -> CENT;
+    private static final PriceGrid CENTS = PriceGrid.single(CENT, DOLLAR);
+    private static final PriceGrids ONE_CENT = nanos -> CENTS;
+    private static final long TENTH = CENT / 10;
+    // Kalshi's tapered_deci_cent: tenths of a cent in the tails, cents between.
+    private static final PriceGrid TAPERED =
+            PriceGrid.of(new long[] {0, 10 * CENT, 90 * CENT}, new long[] {10 * CENT, 90 * CENT, DOLLAR}, new long[] {
+                TENTH, CENT, TENTH
+            });
+    // Tenths of a cent only above 90c, as a NO listing whose YES side is fine only below 10c sees it.
+    private static final PriceGrid FINE_ABOVE_NINETY =
+            PriceGrid.of(new long[] {0, 90 * CENT}, new long[] {90 * CENT, DOLLAR}, new long[] {CENT, TENTH});
     private static final KalshiLiquidityRule KALSHI = new KalshiLiquidityRule();
     private static final int YES = 1;
     private static final int NO = 2;
@@ -54,12 +65,17 @@ class RewardScorerTest {
 
     private static RewardScorer scorer(
             final IncentiveTimeline programs, final boolean plain, final boolean complement) {
+        return scorer(programs, plain, complement, ONE_CENT);
+    }
+
+    private static RewardScorer scorer(
+            final IncentiveTimeline programs, final boolean plain, final boolean complement, final PriceGrids grids) {
         final RewardScorer scorer = new RewardScorer(RewardScorer.Mode.INSERT_OURS, 8, 64);
         if (plain) {
-            scorer.bind(YES, "M", false, KALSHI, programs, ONE_CENT);
+            scorer.bind(YES, "M", false, KALSHI, programs, grids);
         }
         if (complement) {
-            scorer.bind(NO, "M", true, KALSHI, programs, ONE_CENT);
+            scorer.bind(NO, "M", true, KALSHI, programs, grids);
         }
         return scorer;
     }
@@ -95,7 +111,7 @@ class RewardScorerTest {
     void kalshisWorkedExampleEarnsSixteenDollars() {
         final RewardScorer scorer = scorer(example(), true, false);
         book(scorer, YES, T0, BIDS, ASKS);
-        // 500 a side, a tick better than everyone else's 2,000: 20% of each side under either reading.
+        // 500 a side, a tick better than everyone else's 2,000: 20% of each side.
         scorer.onOrder(YES, 1, true, 51 * CENT, 500 * CONTRACT, T0);
         scorer.onOrder(YES, 2, false, 51 * CENT, 500 * CONTRACT, T0);
         book(scorer, YES, T0 + 8000 * SECOND, BIDS, NONE);
@@ -143,28 +159,40 @@ class RewardScorerTest {
     @Test
     void everyBidAtTheLevelThatReachesTheTargetQualifiesWhateverItsPlaceInTheQueue() {
         final RewardScorer scorer = scorer(example(), true, false);
-        // Everyone else's 1,000 at 50c already meets the target; our 200 behind them at 50c still qualify.
-        book(scorer, YES, T0, new long[][] {{50, 1000}}, new long[][] {{52, 1000}});
-        scorer.onOrder(YES, 1, true, 50 * CENT, 200 * CONTRACT, T0);
+        // Everyone else's 5,000 at 50c already meets the target five times over; our 1,000 behind them still qualify.
+        book(scorer, YES, T0, new long[][] {{50, 5000}}, new long[][] {{52, 1000}});
+        scorer.onOrder(YES, 1, true, 50 * CENT, 1000 * CONTRACT, T0);
         scorer.advanceTo(T0 + PERIOD);
 
-        // 200 of the 1,200 on the YES side, the whole period: $100 × (1/6) ÷ 2.
+        // 1,000 of the 6,000 on the YES side, the whole period: $100 × (1/6) ÷ 2.
         assertEquals(100 * DOLLAR / 12, only(scorer).gross(RewardAccrual.PLAIN), 1);
     }
 
     @Test
-    void aSideWhoseBestBidIsAtTheHighestPriceQualifiesNone() {
+    void aSideWhoseBestBidIsAtTheHighestPriceStillQualifies() {
         final RewardScorer scorer = scorer(example(), true, false);
         // A YES ask at 1c is a NO bid at 99c, the highest price a NO bid can have.
         book(scorer, YES, T0, BIDS, new long[][] {{1, 2000}, {2, 2000}});
         scorer.onOrder(YES, 1, true, 51 * CENT, 500 * CONTRACT, T0);
-        book(scorer, YES, T0 + 4000 * SECOND, BIDS, new long[][] {{2, 2000}});
         scorer.advanceTo(T0 + PERIOD);
 
         final RewardAccrual accrual = only(scorer);
-        assertEquals(4000 * SECOND, accrual.oneSidedNanos());
-        assertEquals(6000 * SECOND, accrual.countingNanos());
-        assertEquals(6 * DOLLAR, accrual.gross(RewardAccrual.PLAIN), 1);
+        assertEquals(PERIOD, accrual.countingNanos());
+        assertEquals(0, accrual.oneSidedNanos());
+        assertEquals(10 * DOLLAR, accrual.gross(RewardAccrual.PLAIN), 1);
+    }
+
+    @Test
+    void theWholeOfOneSideEarnsHalfThePeriodsReward() {
+        final RewardScorer scorer = scorer(example(), true, false);
+        // Ours is the only bid and meets the target alone; the ask side qualifies on everyone else's size.
+        book(scorer, YES, T0, NONE, ASKS);
+        scorer.onOrder(YES, 1, true, 50 * CENT, 1000 * CONTRACT, T0);
+        scorer.advanceTo(T0 + PERIOD);
+
+        final RewardAccrual accrual = only(scorer);
+        assertEquals(50 * DOLLAR, accrual.marketGross(), 1);
+        assertEquals(50 * DOLLAR, accrual.marketPaid());
     }
 
     @Test
@@ -179,6 +207,35 @@ class RewardScorerTest {
         // Scores: 100 + 100 + 400×0.5 + 500×0.125, ours 100×0.125 of the 462.5.
         final double share = 12.5 / 462.5;
         assertEquals((long) (100 * DOLLAR * share / 2), only(scorer).gross(RewardAccrual.PLAIN), 2);
+    }
+
+    @Test
+    void aGapAcrossABandEdgeCountsEachBandsTicks() {
+        final IncentiveTimeline halves = timeline(version(T0, T0 + PERIOD, 100 * DOLLAR, 1000, 0.5, T0));
+        final RewardScorer scorer = scorer(halves, true, false, nanos -> TAPERED);
+        // The reference is 12c. 9c is two cents down to 10c, then ten tenths of a cent: twelve ticks, not three.
+        book(scorer, YES, T0, new long[][] {{12, 200}, {9, 800}}, new long[][] {{60, 1000}});
+        scorer.onOrder(YES, 1, true, 9 * CENT, 100 * CONTRACT, T0);
+        scorer.advanceTo(T0 + PERIOD);
+
+        final double discounted = Math.pow(0.5, 12);
+        final double share = 100 * discounted / (200 + 900 * discounted);
+        assertEquals((long) (100 * DOLLAR * share / 2), only(scorer).gross(RewardAccrual.PLAIN), 2);
+    }
+
+    @Test
+    void aComplementListingsGridIsMirroredIntoTheMarketsPlainTerms() {
+        final IncentiveTimeline programs = timeline(version(T0, T0 + PERIOD, 100 * DOLLAR, 1000, 0.9, T0));
+        final RewardScorer scorer = scorer(programs, false, true, nanos -> FINE_ABOVE_NINETY);
+        // NO bids at 92c and 89c: twenty tenths of a cent down to 90c, then a cent, so 21 ticks. Read on the plain
+        // side, as YES asks at 8c and 11c, the NO listing's grid unmirrored would make it three.
+        book(scorer, NO, T0, new long[][] {{92, 200}, {89, 800}}, new long[][] {{40, 1000}});
+        scorer.onOrder(NO, 1, true, 89 * CENT, 100 * CONTRACT, T0);
+        scorer.advanceTo(T0 + PERIOD);
+
+        final double discounted = Math.pow(0.9, 21);
+        final double share = 100 * discounted / (200 + 900 * discounted);
+        assertEquals((long) (100 * DOLLAR * share / 2), only(scorer).gross(RewardAccrual.COMPLEMENT), 2);
     }
 
     @Test
@@ -383,191 +440,5 @@ class RewardScorerTest {
         assertEquals(0, KALSHI.close(DOLLAR - 1));
         assertEquals(DOLLAR, KALSHI.close(DOLLAR));
         assertEquals(123 * CENT, KALSHI.close(123 * CENT + CENT - 1));
-    }
-
-    /** 500 a side joining everyone else's 2,000 at 50c and 52c, for the whole period. */
-    private static RewardScorer joined() {
-        final RewardScorer scorer = scorer(example(), true, false);
-        book(scorer, YES, T0, BIDS, ASKS);
-        scorer.onOrder(YES, 1, true, 50 * CENT, 500 * CONTRACT, T0);
-        scorer.onOrder(YES, 2, false, 52 * CENT, 500 * CONTRACT, T0);
-        return scorer;
-    }
-
-    @Test
-    void atTheFrontOfTheQueueOnlyTheTargetsSizeCountsUnderTheQueueReading() {
-        final RewardScorer scorer = joined();
-        scorer.onQueueAhead(1, 0, T0);
-        scorer.onQueueAhead(2, 0, T0);
-        scorer.advanceTo(T0 + PERIOD);
-
-        final RewardAccrual accrual = only(scorer);
-        // Level: 500 of each side's 2,500. Queue: the level counts the first 1,000, ours the first 500 of them.
-        assertEquals(20 * DOLLAR, accrual.marketGross(), 1);
-        assertEquals(50 * DOLLAR, accrual.marketGrossQueue(), 1);
-    }
-
-    @Test
-    void behindTheTargetsSizeInTheQueueScoresNothingUnderTheQueueReading() {
-        final RewardScorer scorer = joined();
-        scorer.onQueueAhead(1, 1000 * CONTRACT, T0);
-        scorer.onQueueAhead(2, 2000 * CONTRACT, T0);
-        scorer.advanceTo(T0 + PERIOD);
-
-        final RewardAccrual accrual = only(scorer);
-        assertEquals(20 * DOLLAR, accrual.marketGross(), 1);
-        assertEquals(0, accrual.marketGrossQueue());
-    }
-
-    @Test
-    void theQueueReadingIsPaidUnderTheVenuesClosingRule() {
-        final RewardScorer scorer = joined();
-        // 995 ahead leaves 5 of the bid side's 1,000 for us: 0.5% of $50, under Kalshi's $1 minimum.
-        scorer.onQueueAhead(1, 995 * CONTRACT, T0);
-        scorer.onQueueAhead(2, 2000 * CONTRACT, T0);
-        scorer.advanceTo(T0 + PERIOD);
-
-        final RewardAccrual accrual = only(scorer);
-        assertEquals(25 * CENT, accrual.marketGrossQueue(), 1);
-        assertEquals(0, accrual.marketPaidQueue());
-        assertEquals(accrual.marketGross() / CENT * CENT, accrual.marketPaid());
-    }
-
-    @Test
-    void eachOfOurOrdersAtALevelCountsFromItsOwnPlaceInTheQueue() {
-        final RewardScorer scorer = joined();
-        scorer.onOrder(YES, 3, true, 50 * CENT, 100 * CONTRACT, T0);
-        scorer.onQueueAhead(3, 0, T0);
-        scorer.onQueueAhead(1, 900 * CONTRACT, T0);
-        scorer.onQueueAhead(2, 0, T0);
-        scorer.advanceTo(T0 + PERIOD);
-
-        // Bid: our 100 at the front, 900 of everyone else's, then our 500 past the 1,000 the target needs. Ask: 500.
-        assertEquals(5 * DOLLAR + 25 * DOLLAR, only(scorer).marketGrossQueue(), 1);
-    }
-
-    @Test
-    void anOrderThatNeverSaysWhereItStandsIsBehindOurOwnThatDid() {
-        final RewardScorer scorer = joined();
-        scorer.onOrder(YES, 3, true, 50 * CENT, 100 * CONTRACT, T0);
-        scorer.onQueueAhead(3, 0, T0);
-        scorer.onQueueAhead(2, 0, T0);
-        scorer.advanceTo(T0 + PERIOD);
-
-        assertEquals(5 * DOLLAR + 25 * DOLLAR, only(scorer).marketGrossQueue(), 1);
-    }
-
-    @Test
-    void ourOrdersReportingTheSameSizeAheadStandInTheOrderTheyJoined() {
-        final RewardScorer scorer = joined();
-        scorer.onOrder(YES, 3, true, 50 * CENT, 700 * CONTRACT, T0);
-        scorer.onQueueAhead(1, 0, T0);
-        scorer.onQueueAhead(3, 0, T0);
-        scorer.onQueueAhead(2, 0, T0);
-        scorer.advanceTo(T0 + PERIOD);
-
-        final RewardAccrual accrual = only(scorer);
-        // Bid: the first-joined 500, then 500 of the later 700. Ask: 500.
-        assertEquals(50 * DOLLAR + 25 * DOLLAR, accrual.marketGrossQueue(), 1);
-    }
-
-    @Test
-    void theComplementListingsOrdersCountUnderTheQueueReading() {
-        final RewardScorer scorer = scorer(example(), true, true);
-        book(scorer, YES, T0, BIDS, ASKS);
-        scorer.onOrder(YES, 1, true, 50 * CENT, 500 * CONTRACT, T0);
-        // Buying NO at 48c is the YES ask at 52c.
-        scorer.onOrder(NO, 2, true, 48 * CENT, 500 * CONTRACT, T0);
-        scorer.onQueueAhead(1, 0, T0);
-        scorer.onQueueAhead(2, 0, T0);
-        scorer.advanceTo(T0 + PERIOD);
-
-        final RewardAccrual accrual = only(scorer);
-        assertEquals(25 * DOLLAR, accrual.grossQueue(RewardAccrual.PLAIN), 1);
-        assertEquals(25 * DOLLAR, accrual.grossQueue(RewardAccrual.COMPLEMENT), 1);
-    }
-
-    @Test
-    void aDiscountedLevelThatCompletesTheTargetCountsWhatItNeedsAtItsDiscount() {
-        final RewardScorer scorer =
-                scorer(timeline(version(T0, T0 + PERIOD, 100 * DOLLAR, 1000, 0.5, T0)), true, false);
-        book(scorer, YES, T0, new long[][] {{50, 300}, {49, 2000}}, ASKS);
-        scorer.onOrder(YES, 1, true, 49 * CENT, 500 * CONTRACT, T0);
-        scorer.onOrder(YES, 2, false, 52 * CENT, 500 * CONTRACT, T0);
-        scorer.onQueueAhead(1, 0, T0);
-        scorer.onQueueAhead(2, 0, T0);
-        scorer.advanceTo(T0 + PERIOD);
-
-        // Bid: 300 at 50c sets the reference; 49c is a tick past it at half weight and needs 700, ours the first 500:
-        // 250 of 300 + 350. Ask: 500 of 1,000.
-        final double bid = 50.0 * DOLLAR * 250 / 650;
-        assertEquals((long) bid + 25 * DOLLAR, only(scorer).marketGrossQueue(), 2);
-    }
-
-    @Test
-    void anOrderThatNeverSaysWhereItStandsIsBehindEveryoneElse() {
-        final RewardScorer scorer = joined();
-        scorer.advanceTo(T0 + PERIOD);
-
-        assertEquals(0, only(scorer).marketGrossQueue());
-    }
-
-    @Test
-    void theQueueReadingCountsWhatTheTargetStillNeedsAfterTheSizeAhead() {
-        final RewardScorer scorer = joined();
-        // 800 ahead leaves 200 of the target for our 500 on the bid side; the ask side is behind it all.
-        scorer.onQueueAhead(1, 800 * CONTRACT, T0);
-        scorer.onQueueAhead(2, 2000 * CONTRACT, T0);
-        scorer.advanceTo(T0 + PERIOD);
-
-        final RewardAccrual accrual = only(scorer);
-        assertEquals(20 * DOLLAR, accrual.marketGross(), 1);
-        assertEquals(10 * DOLLAR, accrual.marketGrossQueue(), 1);
-    }
-
-    @Test
-    void theSizeAheadIsReadAtEachMomentItHeld() {
-        final RewardScorer scorer = joined();
-        scorer.onQueueAhead(1, 0, T0);
-        scorer.onQueueAhead(2, 0, T0);
-        // Half the period at the front, half behind everyone.
-        scorer.onQueueAhead(1, 2000 * CONTRACT, T0 + PERIOD / 2);
-        scorer.onQueueAhead(2, 2000 * CONTRACT, T0 + PERIOD / 2);
-        scorer.advanceTo(T0 + PERIOD);
-
-        assertEquals(25 * DOLLAR, only(scorer).marketGrossQueue(), 1);
-    }
-
-    @Test
-    void anOrderMovedToAnotherPriceStandsBehindEveryoneUntilToldOtherwise() {
-        final RewardScorer scorer = joined();
-        scorer.onQueueAhead(1, 0, T0);
-        scorer.onQueueAhead(2, 0, T0);
-        scorer.onOrder(YES, 1, true, 50 * CENT, 400 * CONTRACT, T0);
-        scorer.onOrder(YES, 2, false, 52 * CENT, 500 * CONTRACT, T0 + PERIOD / 2);
-        book(scorer, YES, T0 + PERIOD / 2, new long[][] {{49, 2000}}, ASKS);
-        scorer.onOrder(YES, 1, true, 49 * CENT, 500 * CONTRACT, T0 + PERIOD / 2);
-        scorer.advanceTo(T0 + PERIOD);
-
-        final RewardAccrual accrual = only(scorer);
-        // First half: the resized bid keeps its place, 400 of the first 1,000 ($10); the ask 500 of them ($12.50).
-        // Second half: the bid at 49c hasn't said where it stands, so it scores nothing; the ask $12.50 again.
-        assertEquals(35 * DOLLAR, accrual.marketGrossQueue(), 2);
-        // Level: 400 of 2,400 and 500 of 2,500, then 500 of 2,500 a side, at $25 a side per half.
-        assertEquals(25 * DOLLAR / 6 + 15 * DOLLAR, accrual.marketGross(), 2);
-    }
-
-    @Test
-    void aBetterPriceAloneCountsInFullUnderBothReadings() {
-        final RewardScorer scorer = scorer(example(), true, false);
-        book(scorer, YES, T0, BIDS, ASKS);
-        // Alone at 51c: 500 of the target before the level everyone else is at, which counts 500 more of its 2,000.
-        scorer.onOrder(YES, 1, true, 51 * CENT, 500 * CONTRACT, T0);
-        scorer.onOrder(YES, 2, false, 51 * CENT, 500 * CONTRACT, T0);
-        scorer.advanceTo(T0 + PERIOD);
-
-        final RewardAccrual accrual = only(scorer);
-        assertEquals(20 * DOLLAR, accrual.marketGross(), 1);
-        assertEquals(50 * DOLLAR, accrual.marketGrossQueue(), 1);
     }
 }

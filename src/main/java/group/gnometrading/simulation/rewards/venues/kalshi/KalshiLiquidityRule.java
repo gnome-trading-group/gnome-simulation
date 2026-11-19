@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import group.gnometrading.simulation.rewards.LiquidityRule;
 import group.gnometrading.simulation.rewards.SideLevels;
 import group.gnometrading.simulation.rewards.SideScore;
+import group.gnometrading.sm.PriceGrid;
 import group.gnometrading.sm.incentive.IncentiveProgram;
 
 /**
@@ -11,18 +12,13 @@ import group.gnometrading.sm.incentive.IncentiveProgram;
  * each snapshot, for each side (a YES ask counts as a NO bid):
  *
  * <ul>
- *   <li>Walking from the best bid, whole price levels are added until their size reaches the target; every bid at the
- *       level that reaches it qualifies. A side that never reaches it, or whose best bid is at the highest possible
- *       price, qualifies none.
+ *   <li>Walking from the best bid, whole price levels are added until their size reaches the target: every bid at a
+ *       level added qualifies at its full size, including the level that reaches it. A side that never reaches it
+ *       qualifies none.
  *   <li>The reference price is the first of those levels where the size reached a fifth of the target.
  *   <li>A bid scores its size times the discount factor once per tick it sits below the reference price, divided by
  *       the side's total.
  * </ul>
- *
- * The terms don't say whether every bid at the level that reaches the target qualifies, or only the bids that reach
- * it in queue order. Both are scored: the level reading as above, and the queue reading, where that level counts only
- * the size the target still needs, taken from the front of its queue, so our bids there count only for whatever of it
- * is left after everyone else's size ahead of them.
  *
  * <p>A snapshot counts only when both sides qualify, so a market's snapshot shares sum to 2. The reward is the period's
  * reward times our total share, divided by twice the period's snapshots, rounded down to the cent, and nothing under
@@ -47,12 +43,12 @@ public final class KalshiLiquidityRule implements LiquidityRule {
     }
 
     @Override
-    public void scoreSide(final SideLevels side, final Object terms, final long tick, final SideScore out) {
+    public void scoreSide(final SideLevels side, final Object terms, final PriceGrid grid, final SideScore out) {
         final Terms kalshi = (Terms) terms;
         final double target = kalshi.targetSize();
         final int levels = side.count();
         out.reset(levels);
-        if (levels == 0 || atHighestPrice(side, tick)) {
+        if (levels == 0) {
             return;
         }
 
@@ -74,27 +70,17 @@ public final class KalshiLiquidityRule implements LiquidityRule {
         cumulative = 0;
         double total = 0;
         for (int i = 0; i < levels; i++) {
-            final double others = side.others(i);
-            final double ours = side.ours(i);
-            final double needed = target - cumulative;
-            final double totalBefore = total;
-            cumulative += others + ours;
-            final double multiplier = i <= reference ? 1.0 : discount(kalshi, referencePrice, side.price(i), tick);
-            total += (others + ours) * multiplier;
-            out.scoreOurs(i, ours * multiplier);
+            final double size = side.others(i) + side.ours(i);
+            final double multiplier = i <= reference ? 1.0 : discount(kalshi, referencePrice, side.price(i), grid);
+            cumulative += size;
+            total += size * multiplier;
+            out.scoreOurs(i, side.ours(i) * multiplier);
             if (cumulative >= target) {
-                out.crossing(i, needed, multiplier);
-                out.qualify(total, totalBefore + needed * multiplier);
+                out.qualify(total);
                 return;
             }
         }
         markShort(side, out, levels);
-    }
-
-    /** The side's best bid can't be bettered: 99c on a cent tick, for YES bids or (as a YES ask of 1c) NO bids. */
-    private static boolean atHighestPrice(final SideLevels side, final long tick) {
-        final long best = side.price(0);
-        return side.bid() ? best >= DOLLAR - tick : best <= tick;
     }
 
     private static void markShort(final SideLevels side, final SideScore out, final int levels) {
@@ -104,9 +90,12 @@ public final class KalshiLiquidityRule implements LiquidityRule {
         }
     }
 
-    private static double discount(final Terms terms, final long reference, final long price, final long tick) {
-        final long ticks = (Math.abs(price - reference) + tick / 2) / tick;
-        return Math.pow(terms.discountFactor(), ticks);
+    /**
+     * A tick is a step of the market's price grid, so on a banded grid a gap that crosses a band edge counts each band's
+     * steps. The asks' gaps are counted in the plain grid; the complement's grid mirrors it, so the count is the same.
+     */
+    private static double discount(final Terms terms, final long reference, final long price, final PriceGrid grid) {
+        return Math.pow(terms.discountFactor(), grid.ticksBetween(reference, price));
     }
 
     @Override

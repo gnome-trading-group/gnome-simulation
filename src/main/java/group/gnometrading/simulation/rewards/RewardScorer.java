@@ -1,6 +1,7 @@
 package group.gnometrading.simulation.rewards;
 
 import group.gnometrading.schemas.book.Mbp10Decoder;
+import group.gnometrading.sm.PriceGrid;
 import group.gnometrading.sm.incentive.IncentiveProgram;
 import group.gnometrading.sm.incentive.IncentiveTimeline;
 import java.util.ArrayList;
@@ -51,7 +52,6 @@ public final class RewardScorer {
     private final long[] askSizes = new long[LEVELS];
     private long clock = Long.MIN_VALUE;
     private long ordersDropped;
-    private long joins;
 
     /**
      * {@code ordersPerMarket} bounds our resting orders on one market and {@code orders} all of them; past either, a
@@ -70,7 +70,8 @@ public final class RewardScorer {
     /**
      * Binds a listing to its market: {@code complement} for the listing whose book and prices are the market's
      * complement. The first listing bound with programs supplies the market's; both listings of a market get the same
-     * ones from the registry anyway.
+     * ones from the registry anyway. {@code grids} is the listing's own price grid over time; the market keeps the
+     * first one bound.
      */
     public void bind(
             final int listingId,
@@ -78,12 +79,13 @@ public final class RewardScorer {
             final boolean complement,
             final LiquidityRule rule,
             final IncentiveTimeline timeline,
-            final TickSize tick) {
+            final PriceGrids grids) {
         if (this.listings.containsKey(listingId)) {
             throw new IllegalArgumentException("Listing " + listingId + " is already bound");
         }
         final Market market = this.marketsByKey.computeIfAbsent(marketKey, key -> {
-            final Market created = new Market(key, rule, tick, LEVELS + this.ordersPerMarket, this.ordersPerMarket);
+            final Market created =
+                    new Market(key, rule, grids, complement, LEVELS + this.ordersPerMarket, this.ordersPerMarket);
             this.markets.add(created);
             return created;
         });
@@ -287,35 +289,14 @@ public final class RewardScorer {
             }
             order = this.free[--this.freeCount];
             order.clientOid = clientOid;
-            order.bookPrice = NONE;
-            order.othersAhead = Double.NaN;
             order.market = market;
             market.orders[market.orderCount++] = order;
             this.orders.put(clientOid, order);
         }
-        final long bookPrice = binding.complement ? CERTAIN - price : price;
-        if (order.bookPrice != bookPrice) {
-            order.othersAhead = Double.NaN;
-            order.joined = this.joins++;
-        }
         order.slot = binding.complement ? RewardAccrual.COMPLEMENT : RewardAccrual.PLAIN;
         order.plainBid = buy != binding.complement;
-        order.bookPrice = bookPrice;
+        order.bookPrice = binding.complement ? CERTAIN - price : price;
         order.size = restingSize / SIZE_SCALE;
-    }
-
-    /**
-     * How much of everyone else's size is ahead of one of our resting orders in its level's queue, as the exchange
-     * holding it (a simulated one) tracks it. Only the queue reading of a venue's rule uses it; an order that never
-     * says is taken to be behind everyone else at its level.
-     */
-    public void onQueueAhead(final long clientOid, final long othersAheadSize, final long timestampNanos) {
-        final OurOrder order = this.orders.get(clientOid);
-        if (order == null) {
-            return;
-        }
-        integrate(order.market, tick(timestampNanos));
-        order.othersAhead = othersAheadSize / SIZE_SCALE;
     }
 
     private void remove(final OurOrder order) {
@@ -441,10 +422,6 @@ public final class RewardScorer {
         boolean plainBid;
         long bookPrice;
         double size;
-        // Others' size ahead of it in its level's queue, in contracts; NaN until the exchange says.
-        double othersAhead = Double.NaN;
-        // When it joined its price's queue, to order our own orders there that report the same size ahead.
-        long joined;
         int level;
     }
 
@@ -482,7 +459,10 @@ public final class RewardScorer {
 
         final String key;
         final LiquidityRule rule;
-        final TickSize tick;
+        final PriceGrids grids;
+        final boolean gridsComplement;
+        private PriceGrid lastGrid;
+        private PriceGrid lastPlainGrid;
         final int[] listingIds = {NONE, NONE};
         Program[] programs = NO_PROGRAMS;
         final long[] bidPrice = new long[LEVELS];
@@ -502,10 +482,17 @@ public final class RewardScorer {
         final SideScore bidScore;
         final SideScore askScore;
 
-        Market(final String key, final LiquidityRule rule, final TickSize tick, final int levels, final int orders) {
+        Market(
+                final String key,
+                final LiquidityRule rule,
+                final PriceGrids grids,
+                final boolean gridsComplement,
+                final int levels,
+                final int orders) {
             this.key = key;
             this.rule = rule;
-            this.tick = tick;
+            this.grids = grids;
+            this.gridsComplement = gridsComplement;
             this.orders = new OurOrder[orders];
             this.bids = new SideLevels(levels, true);
             this.asks = new SideLevels(levels, false);
@@ -554,9 +541,9 @@ public final class RewardScorer {
         void score(final Program program, final int version, final double nanos, final long start) {
             final RewardAccrual accrual = program.accrual;
             final Object terms = program.terms[version];
-            final long tickSize = this.tick.at(start);
-            this.rule.scoreSide(this.bids, terms, tickSize, this.bidScore);
-            this.rule.scoreSide(this.asks, terms, tickSize, this.askScore);
+            final PriceGrid grid = plainGrid(start);
+            this.rule.scoreSide(this.bids, terms, grid, this.bidScore);
+            this.rule.scoreSide(this.asks, terms, grid, this.askScore);
             if (!this.bidScore.qualifies || !this.askScore.qualifies) {
                 if (this.bidScore.depthUnknown || this.askScore.depthUnknown) {
                     accrual.depthUnknownNanos += nanos;
@@ -567,6 +554,22 @@ public final class RewardScorer {
             }
             accrual.countingNanos += nanos;
             accrueOurs(accrual, program.rewardPerShareNano[version], nanos);
+        }
+
+        /**
+         * The market's grid at a time in its plain terms, as both sides' prices are. A complement listing's grid is
+         * mirrored, kept until the listing's grid next changes so scoring doesn't allocate.
+         */
+        private PriceGrid plainGrid(final long nanos) {
+            final PriceGrid grid = this.grids.at(nanos);
+            if (!this.gridsComplement) {
+                return grid;
+            }
+            if (grid != this.lastGrid) {
+                this.lastGrid = grid;
+                this.lastPlainGrid = grid.complement();
+            }
+            return this.lastPlainGrid;
         }
 
         /** Gives each of our orders its part of its side's score over the stretch. */
@@ -581,45 +584,8 @@ public final class RewardScorer {
                 }
                 final double part = order.size / oursAtLevel;
                 final double share = score.ours[order.level] * part / score.total;
-                final double shareQueue =
-                        score.totalQueue > 0 ? queueScore(order, side, score, part) / score.totalQueue : 0;
-                accrual.add(order.slot, share * nanos, share * nanos * rate, shareQueue * nanos * rate);
+                accrual.add(order.slot, share * nanos, share * nanos * rate);
             }
-        }
-
-        /**
-         * An order's score under the queue reading. At the level that completes its side's requirement only the size
-         * the requirement still needed counts, from the front of the queue, so the order counts for whatever of it is
-         * left after everyone ahead of it: everyone else's size it reported, and our own orders ahead of it there.
-         */
-        private double queueScore(
-                final OurOrder order, final SideLevels side, final SideScore score, final double part) {
-            if (order.level != score.crossing) {
-                return score.ours[order.level] * part;
-            }
-            final double others = side.others[order.level];
-            double ahead = Double.isNaN(order.othersAhead) ? others : Math.min(order.othersAhead, others);
-            for (int i = 0; i < this.orderCount; i++) {
-                final OurOrder other = this.orders[i];
-                if (other != order
-                        && other.plainBid == order.plainBid
-                        && other.level == order.level
-                        && isAhead(other, order)) {
-                    ahead += other.size;
-                }
-            }
-            return Math.max(0, Math.min(order.size, score.crossingNeeded - ahead)) * score.crossingMultiplier;
-        }
-
-        /** An order that never reported where it stands is behind every other at its level. */
-        private static boolean isAhead(final OurOrder candidate, final OurOrder order) {
-            final double candidateAhead = queueKey(candidate);
-            final double orderAhead = queueKey(order);
-            return candidateAhead < orderAhead || (candidateAhead == orderAhead && candidate.joined < order.joined);
-        }
-
-        private static double queueKey(final OurOrder order) {
-            return Double.isNaN(order.othersAhead) ? Double.POSITIVE_INFINITY : order.othersAhead;
         }
     }
 }
